@@ -6,7 +6,7 @@ from rag_utils import fetch_data
 from gemini_client import generate_response
 from flask_cors import CORS
 
-app = Flask(__name__, static_folder='../frontend', static_url_path='')
+app = Flask(__name__, static_folder='frontend', static_url_path='')
 CORS(app)
 
 # 🔧 Fix: Register root route properly
