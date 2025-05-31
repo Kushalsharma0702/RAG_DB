@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Financial Chatbot</title>
+    <!-- <link rel="stylesheet" href="style.css" /> -->
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .chat-container {
+            width: 90%;
+            max-width: 600px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        #chat-box {
+            padding: 20px;
+            height: 400px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #chat-box p {
+            margin-bottom: 8px;
+            padding: 10px 15px;
+            border-radius: 20px;
+            max-width: 80%;
+            word-break: break-word;
+        }
+
+        #chat-box p.user {
+            background-color: #d1f1c7;
+            align-self: flex-end;
+        }
+
+        #chat-box p.bot {
+            background-color: #f1f0f0;
+            align-self: flex-start;
+        }
+
+        #input-area {
+            display: flex;
+            padding: 10px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        #user-input {
+            flex-grow: 1;
+            border: none;
+            padding: 10px;
+            font-size: 16px;
+            border-radius: 20px;
+            margin-right: 10px;
+            outline: none;
+        }
+
+        #send-button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 20px;
+            cursor: pointer;
+        }
+
+        #send-button:hover {
+            background-color: #0056b3;
+        }
+
+        .options-container {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .option-button {
+            padding: 10px 14px;
+            background-color: #e0e0e0;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            text-align: left;
+        }
+
+        .option-button:hover {
+            background-color: #d0d0d0;
+        }
+
+        #loader {
+            text-align: center;
+            padding: 10px;
+            color: gray;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #greeting {
+            font-size: 18px;
+            font-weight: bold;
+            overflow: hidden;
+            border-right: .15em solid orange;
+            white-space: nowrap;
+            letter-spacing: .1em;
+            animation:
+                typing 3s steps(40, end),
+                blink-caret 0.75s step-end infinite;
+        }
+
+        @keyframes typing {
+            from {
+                width: 0
+            }
+
+            to {
+                width: 100%
+            }
+        }
+
+        @keyframes blink-caret {
+
+            from,
+            to {
+                border-color: transparent
+            }
+
+            50% {
+                border-color: orange;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .chat-container {
+                width: 95%;
+            }
+
+            #chat-box {
+                height: 300px;
+            }
+
+            #user-input {
+                font-size: 14px;
+            }
+
+            #send-button {
+                padding: 8px 16px;
+                font-size: 14px;
+            }
+
+            .option-button {
+                font-size: 13px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="chat-container">
+        <div id="chat-box">
+            <p class="bot" id="greeting">Hello! How can I assist you today?</p>
+        </div>
+        <div id="loader" class="hidden">Typing...</div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="Type here..." />
+            <button id="send-button" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let stage = 0;
+        let accountId = "";
+        let phone = "";
+        let queryType = "";
+
+        window.onload = function () {
+            setTimeout(() => {
+                appendBot("Please select an option below:");
+                showOptions();
+            }, 3500);
+        };
+
+        function showOptions() {
+            const options = [
+                { text: "1. What is my EMI?", value: "emi" },
+                { text: "2. What is my account balance?", value: "balance" },
+                { text: "3. What is my Loan Amount?", value: "loan" }
+            ];
+            const chatBox = document.getElementById("chat-box");
+            const container = document.createElement("div");
+            container.className = "options-container";
+
+            options.forEach(opt => {
+                const btn = document.createElement("button");
+                btn.className = "option-button";
+                btn.textContent = opt.text;
+                btn.onclick = () => handleOption(opt.value, opt.text);
+                container.appendChild(btn);
+            });
+
+            chatBox.appendChild(container);
+        }
+
+        function handleOption(value, label) {
+            addMessage(label, 'user');
+            queryType = value;
+            appendBot("Please enter your Account ID:");
+            stage = 1;
+        }
+
+        function sendMessage() {
+            const input = document.getElementById("user-input").value.trim();
+            if (!input) return;
+            addMessage(input, 'user');
+
+            if (stage === 0) {
+                const inputMap = { "1": "emi", "2": "balance", "3": "loan" };
+                if (inputMap[input]) {
+                    queryType = inputMap[input];
+                    appendBot("Please enter your Account ID:");
+                    stage = 1;
+                } else {
+                    appendBot("Please type 1, 2 or 3.");
+                }
+            } else if (stage === 1) {
+                accountId = input;
+                fetch("/send_otp", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ account_id: accountId })
+                }).then(r => r.json()).then(data => {
+                    if (data.status === "success") {
+                        phone = data.phone;
+                        appendBot("OTP sent to your registered number. Enter OTP:");
+                        stage = 2;
+                    } else {
+                        appendBot(data.message);
+                    }
+                });
+            } else if (stage === 2) {
+                const otp = input;
+                fetch("/verify_otp", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ phone: phone, otp: otp })
+                }).then(r => r.json()).then(data => {
+                    if (data.status === "success") {
+                        appendBot("OTP verified! Fetching your information...");
+                        showLoader(true);
+                        stage = 3;
+                        fetch("/query", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ account_id: accountId, query_type: queryType })
+                        }).then(r => r.json()).then(data => {
+                            showLoader(false);
+                            if (data.status === "success") {
+                                appendBot(data.reply);
+                            } else {
+                                appendBot(data.message);
+                            }
+                        });
+                    } else {
+                        appendBot(data.message);
+                    }
+                });
+            }
+
+            document.getElementById("user-input").value = "";
+        }
+
+        function appendBot(msg) {
+            const chatBox = document.getElementById("chat-box");
+            const message = document.createElement("p");
+            message.className = "bot";
+            message.textContent = msg;
+            chatBox.appendChild(message);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function addMessage(msg, sender) {
+            const chatBox = document.getElementById("chat-box");
+            const message = document.createElement("p");
+            message.className = sender;
+            message.textContent = msg;
+            chatBox.appendChild(message);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function showLoader(show) {
+            document.getElementById("loader").className = show ? "" : "hidden";
+        }
+    </script>
+</body>
+
+</html>
