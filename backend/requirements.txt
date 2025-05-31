@@ -4,3 +4,4 @@ python-dotenv
 SQLAlchemy
 google-generativeai
 twilio
+gunicorn
