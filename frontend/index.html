@@ -4,38 +4,58 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Financial Chatbot</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 <style>
   body {
-    font-family: Arial, sans-serif;
-    background: #121212;
-    color: #eee;
+    font-family: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #f5f7f9;
+    color: #333;
     margin: 0; padding: 0;
     display: flex; flex-direction: column; height: 100vh;
+  }
+  header {
+    background: #1e3a8a;
+    color: white;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
   }
   #chat-box {
     flex: 1;
     overflow-y: auto;
-    padding: 1rem;
-    background: #222;
+    padding: 1.5rem;
+    background: #f5f7f9;
+    display: flex;
+    flex-direction: column;
   }
   p.bot {
-    background: #444;
-    padding: 0.6rem 1rem;
-    border-radius: 12px;
-    max-width: 70%;
-    margin: 0.3rem 0;
+    background: white;
+    padding: 0.8rem 1.2rem;
+    border-radius: 18px;
+    border-top-left-radius: 4px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    max-width: 75%;
+    margin: 0.5rem 0;
+    line-height: 1.5;
+    color: #333;
+    align-self: flex-start;
+    position: relative;
   }
   p.user {
-    background: #0084ff;
-    padding: 0.6rem 1rem;
-    border-radius: 12px;
-    color: #fff;
-    max-width: 70%;
-    margin: 0.3rem 0;
+    background: #1e3a8a;
+    padding: 0.8rem 1.2rem;
+    border-radius: 18px;
+    border-top-right-radius: 4px;
+    color: white;
+    max-width: 75%;
+    margin: 0.5rem 0;
+    line-height: 1.5;
     align-self: flex-end;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
   }
   p.bot strong {
-    color: #ffe082;
+    color: #1e3a8a;
+    font-weight: 600;
   }
   p.bot ul {
     list-style-type: disc;
@@ -43,73 +63,128 @@
     padding-left: 0;
   }
   p.bot li {
-    margin-bottom: 0.3rem;
+    margin-bottom: 0.5rem;
   }
   #input-area {
     display: flex;
-    background: #181818;
-    padding: 0.5rem;
+    background: white;
+    padding: 1rem;
+    border-top: 1px solid #e5e7eb;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
   }
   #user-input {
     flex: 1;
-    padding: 0.8rem;
-    border: none;
-    border-radius: 6px;
+    padding: 0.8rem 1.2rem;
+    border: 1px solid #d1d5db;
+    border-radius: 24px;
     font-size: 1rem;
-    background: #333;
-    color: #eee;
+    background: white;
+    color: #333;
     resize: none;
     overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+    transition: border-color 0.2s;
   }
   #user-input:focus {
     outline: none;
+    border-color: #1e3a8a;
+    box-shadow: 0 0 0 2px rgba(30,58,138,0.2);
   }
   button.option-button {
-    margin: 0.2rem;
-    padding: 0.4rem 1rem;
-    background: #333;
-    border: none;
-    border-radius: 6px;
-    color: #eee;
+    margin: 0.3rem;
+    padding: 0.7rem 1.5rem;
+    background: white;
+    border: 1px solid #1e3a8a;
+    border-radius: 24px;
+    color: #1e3a8a;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: 500;
+    transition: all 0.2s;
   }
   button.option-button:hover {
-    background: #555;
+    background: #1e3a8a;
+    color: white;
   }
   .options-container, .feedback-container {
     margin: 1rem 0;
     display: flex;
-    gap: 0.5rem;
+    gap: 0.8rem;
     flex-wrap: wrap;
+    justify-content: center;
   }
   button.feedback-button {
-    padding: 0.5rem 1.2rem;
-    font-weight: 600;
-    border-radius: 6px;
-    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.6rem;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid #e5e7eb;
     cursor: pointer;
-    background-color: #28a745;
-    color: white;
+    background-color: white;
+    color: #6b7280;
+    transition: all 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   }
-  button.feedback-button.negative {
-    background-color: #dc3545;
+  button.feedback-button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+  }
+  button.feedback-button.positive:hover {
+    background-color: #ecfdf5;
+    color: #10b981;
+    border-color: #10b981;
+  }
+  button.feedback-button.negative:hover {
+    background-color: #fef2f2;
+    color: #ef4444;
+    border-color: #ef4444;
   }
   #loader {
     display: none;
     text-align: center;
-    padding: 0.5rem;
-    color: #aaa;
+    padding: 1rem;
+    color: #6b7280;
   }
-  #loader.show {
-    display: block;
+  .typing-indicator {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    background: white;
+    border-radius: 18px;
+    width: fit-content;
+    margin: 0.5rem 0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+  .typing-indicator span {
+    width: 8px;
+    height: 8px;
+    background: #d1d5db;
+    border-radius: 50%;
+    display: inline-block;
+    animation: typing 1.4s infinite ease-in-out both;
+  }
+  .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+  .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+  .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+  
+  @keyframes typing {
+    0%, 100% { transform: scale(0.7); opacity: 0.5; }
+    50% { transform: scale(1); opacity: 1; }
   }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
+  <header>
+    <h1>Financial Assistant</h1>
+  </header>
   <div id="chat-box"></div>
-  <div id="loader">⏳ Loading...</div>
+  <div id="loader" class="typing-indicator">
+    <span></span><span></span><span></span>
+  </div>
   <div id="input-area">
     <textarea id="user-input" rows="1" placeholder="Type your message and press Enter..."></textarea>
   </div>
@@ -316,13 +391,15 @@
     feedbackContainer.className = "feedback-container";
 
     const positiveBtn = document.createElement("button");
-    positiveBtn.className = "feedback-button";
-    positiveBtn.textContent = "👍 Useful";
+    positiveBtn.className = "feedback-button positive";
+    positiveBtn.innerHTML = '<i class="fas fa-thumbs-up"></i>';
+    positiveBtn.title = "Helpful";
     positiveBtn.onclick = () => sendFeedback(true);
 
     const negativeBtn = document.createElement("button");
     negativeBtn.className = "feedback-button negative";
-    negativeBtn.textContent = "👎 Not Useful";
+    negativeBtn.innerHTML = '<i class="fas fa-thumbs-down"></i>';
+    negativeBtn.title = "Not Helpful";
     negativeBtn.onclick = () => sendFeedback(false);
 
     feedbackContainer.appendChild(positiveBtn);

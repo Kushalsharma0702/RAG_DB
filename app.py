@@ -5,6 +5,8 @@ import uuid
 from datetime import datetime
 from flask_cors import CORS
 import logging
+from twilio.rest import Client
+import json
 
 from otp_manager import send_otp, validate_otp
 from bedrock_client import generate_response, get_chat_summary, get_embedding, get_intent_from_text
@@ -17,7 +19,8 @@ from database import (
     create_tables
 )
 from rag_utils import fetch_data
-from db_migration import run_migration  # Import the migration function
+from db_migration import run_migration
+from config import TWILIO_SID, TWILIO_AUTH_TOKEN, TWILIO_CONVERSATIONS_SERVICE_SID, TWILIO_PHONE
 
 load_dotenv()
 
@@ -25,21 +28,93 @@ app = Flask(__name__, static_folder='frontend')
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "your_super_secret_key")
 CORS(app)
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-# Ensure tables are created and migrated when the app starts
+twilio_client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+
 with app.app_context():
     create_tables()
     try:
-        run_migration()  # Run the migration to fix any schema issues
+        run_migration()
         print("Database setup completed successfully")
     except Exception as e:
         print(f"Warning: Database migration encountered an issue: {e}")
         print("The application will continue, but some features may not work correctly.")
+
+def _create_or_get_conversation_and_add_participants(customer_id, customer_phone_number):
+    conversation_sid = None
+    conversation_unique_name = f"customer_{customer_id}_handoff"
+    friendly_name = f"Chat with {customer_id}"
+
+    try:
+        try:
+            conversation = twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
+                            .conversations.get(conversation_unique_name).fetch()
+            conversation_sid = conversation.sid
+            logging.info(f"Existing conversation found for {customer_id}: {conversation_sid}")
+        except Exception as e_get:
+            # Modified this line to be more robust
+            if "not found" in str(e_get).lower():
+                logging.info(f"No existing conversation with unique name '{conversation_unique_name}'. Attempting to create a new one.")
+                try:
+                    conversation = twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
+                                    .conversations.create(
+                                        friendly_name=friendly_name,
+                                        unique_name=conversation_unique_name,
+                                        attributes=json.dumps({"customer_id": customer_id})
+                                    )
+                    conversation_sid = conversation.sid
+                    logging.info(f"New conversation created for {customer_id} in service {TWILIO_CONVERSATIONS_SERVICE_SID}: {conversation_sid}")
+                except Exception as e_create:
+                    logging.error(f"❌ Error creating new conversation for {customer_id}: {e_create}")
+                    return None
+            else:
+                logging.error(f"❌ Unexpected error fetching conversation by unique name: {e_get}")
+                return None
+
+        if conversation_sid:
+            try:
+                twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
+                    .conversations(conversation_sid) \
+                    .participants.create(identity=customer_id, attributes=json.dumps({"type": "customer", "phone_number": customer_phone_number}))
+                logging.info(f"Customer {customer_id} added as participant to conversation {conversation_sid}")
+            except Exception as e_customer_add:
+                if "Participant already exists" not in str(e_customer_add):
+                    logging.error(f"❌ Error adding customer {customer_id} to conversation {conversation_sid}: {e_customer_add}")
+                else:
+                    logging.info(f"Customer {customer_id} already participant in conversation {conversation_sid}")
+
+            try:
+                agent_identity = "live_agent_1"
+                twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
+                    .conversations(conversation_sid) \
+                    .participants.create(identity=agent_identity, attributes=json.dumps({"type": "agent"}))
+                logging.info(f"Agent {agent_identity} added as participant to conversation {conversation_sid}")
+            except Exception as e_agent_add:
+                if "Participant already exists" not in str(e_agent_add):
+                    logging.error(f"❌ Error adding agent {agent_identity} to conversation {conversation_sid}: {e_agent_add}")
+                else:
+                    logging.info(f"Agent {agent_identity} already participant in conversation {conversation_sid}")
+        
+        return conversation_sid
+
+    except Exception as e:
+        logging.error(f"❌ General error in _create_or_get_conversation_and_add_participants: {e}")
+        return None
+
+def _send_message_to_conversation(conversation_sid, author, message_body):
+    try:
+        message = twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
+                        .conversations(conversation_sid) \
+                        .messages.create(author=author, body=message_body)
+        logging.info(f"Message sent to conversation {conversation_sid} by {author}")
+        return message.sid
+    except Exception as e:
+        logging.error(f"❌ Error sending message to conversation {conversation_sid}: {e}")
+        return None
 
 @app.route('/')
 def serve_frontend():
@@ -124,51 +199,42 @@ def chat():
     logging.info(f"🏆 Chat request received for account_id={account_id}, customer_id={customer_id}")
 
     if not session.get('authenticated'):
-        # Try rule-based classifier first for more reliability
         intent = classify_intent(user_message)
         if intent == "unclear":
-            # Fall back to ML-based classifier
             try:
                 intent = get_intent_from_text(chat_history)
             except Exception as e:
                 logging.error(f"Error with ML intent classification: {e}")
-                # Keep the rule-based result if ML fails
         
         if intent in ['emi', 'balance', 'loan']:
             reply = "Understood. To proceed, please enter your Account ID:"
             save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='awaiting_account_id', intent=intent)
             session['pending_intent'] = intent
-            session['pending_message'] = user_message  # Store the original message
+            session['pending_message'] = user_message
             return jsonify({"status": "success", "reply": reply})
         else:
             reply = "Hello! I am your financial assistant. You can ask me about your EMI, account balance, or loan details. You can also select an option below."
             save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='initial_greeting', intent=intent)
             return jsonify({"status": "success", "reply": reply})
 
-    # For intent classification, use a simplified approach that looks at the most recent user message
     logging.info(f"Session pending_intent before pop: {session.get('pending_intent')}")
     query_type = session.pop('pending_intent', None)
     
     if not query_type:
-        # Try rule-based classifier first
         query_type = classify_intent(user_message)
         logging.info(f"Rule-based intent classification: {query_type}")
         
-        # If still unclear, try ML-based
         if query_type == 'unclear':
             try:
-                # Create a single-message list to focus intent classification on current message
                 single_message = [{"sender": "user", "content": user_message}]
                 intent = get_intent_from_text(single_message)
                 query_type = intent
                 logging.info(f"ML-based intent from current message: {query_type}")
             except Exception as e:
                 logging.error(f"Error with ML intent classification: {e}")
-                # Keep the rule-based result
 
     logging.info(f"🏆 Using query_type={query_type} for account_id={account_id}")
 
-    # If we still have an unclear intent, provide guidance to the user
     if query_type == 'unclear':
         reply = "I'm not sure what financial information you're looking for. Could you please specify if you want to know about your EMI, account balance, or loan details?"
         save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='intent_unclear', intent=query_type)
@@ -191,6 +257,7 @@ def chat():
 def summarize_chat_route():
     chat_history = request.json.get("chat_history", [])
     customer_id = session.get('customer_id')
+    customer_phone_number = session.get('phone_number')
     current_session_id = str(session.get('session_id', uuid.uuid4()))
 
     if not customer_id:
@@ -207,6 +274,34 @@ def summarize_chat_route():
                 summary=summary_text,
                 embedding=summary_embedding
             )
+            
+            conversation_sid = _create_or_get_conversation_and_add_participants(
+                customer_id=str(customer_id),
+                customer_phone_number=customer_phone_number
+            )
+
+            if conversation_sid:
+                _send_message_to_conversation(
+                    conversation_sid, 
+                    author="System", 
+                    message_body=f"A user ({customer_id}) has reported an unresolved issue and requires agent assistance.\n\nSummary:\n{summary_text}"
+                )
+
+                last_three_chats = get_last_three_chats(customer_id)
+                if last_three_chats:
+                    _send_message_to_conversation(conversation_sid, author="System", message_body="--- Last 3 Chat Interactions ---")
+                    for chat in last_three_chats:
+                        _send_message_to_conversation(
+                            conversation_sid,
+                            author=chat['sender'],
+                            message_body=chat['message_text']
+                        )
+                
+                logging.info(f"✅ Messages sent to conversation {conversation_sid}")
+                logging.info(f"🔁 Chat routed to agent. Conversation SID: {conversation_sid}")
+            else:
+                logging.error("❌ Failed to create/get conversation or add participants for agent handoff.")
+
             print(f"Saved unresolved chat summary and embedding for customer {customer_id} (Session: {current_session_id})")
             return jsonify({"status": "success", "message": "Chat summary and embedding saved."})
         else:
@@ -224,6 +319,41 @@ def get_agent_summary():
         return jsonify({"status": "error", "message": "Customer ID is required."}), 400
     chats = get_last_three_chats(customer_id)
     return jsonify({"status": "success", "chats": chats})
+
+@app.route("/ozonetel_voice", methods=["POST"])
+def handle_ozonetel_voice():
+    data = request.form
+    phone_number = data.get("caller_id")
+    dtmf_input = data.get("user_input")
+    stage = data.get("stage")
+
+    if stage == "account_id":
+        session['phone_number'] = phone_number
+        session['account_id'] = dtmf_input
+        result = fetch_customer_by_account(dtmf_input)
+        if result:
+            session['customer_id'] = result['customer_id']
+            send_otp(result['phone_number'])
+            return "OTP sent via SMS. Please enter it."
+        else:
+            return "Account ID not found. Try again."
+    elif stage == "otp":
+        valid, msg = validate_otp(session.get('phone_number'), dtmf_input)
+        if valid:
+            session['authenticated'] = True
+            return "OTP verified. Please speak your query."
+        else:
+            return msg
+    elif stage == "query":
+        query_type = classify_intent(dtmf_input)
+        result = fetch_data(query_type, session.get('account_id'))
+        if not result:
+            return f"No data found for {query_type}"
+        answer = generate_response(query_type, result, [])
+        return answer
+    else:
+        return "Invalid stage."
+
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5504)
