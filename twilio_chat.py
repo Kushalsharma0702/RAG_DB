@@ -83,3 +83,44 @@ def send_message_to_conversation(conversation_sid, sender_id, message):
         logging.info(f"✅ Message sent to conversation {conversation_sid} by {sender_id}")
     except Exception as e:
         logging.error(f"❌ Error sending message to conversation {conversation_sid}: {e}")
+
+def create_and_send_to_agent(customer_id, phone_number, summary, recent_messages):
+    """
+    Comprehensive function to create a conversation, add participants, and send messages.
+    
+    Args:
+        customer_id (str): Customer's ID
+        phone_number (str): Customer's phone number
+        summary (str): Summary of the conversation
+        recent_messages (list): List of recent messages for context
+        
+    Returns:
+        str: Conversation SID if successful, None otherwise
+    """
+    conversation_sid = create_conversation(customer_id)
+    
+    if not conversation_sid:
+        logging.error(f"Failed to create conversation for customer {customer_id}")
+        return None
+    
+    # Send the summary
+    send_message_to_conversation(
+        conversation_sid,
+        "System",
+        f"Customer {customer_id} (Phone: {phone_number}) has requested assistance:\n\n{summary}"
+    )
+    
+    # Send recent messages
+    send_message_to_conversation(conversation_sid, "System", "--- Recent Messages ---")
+    for msg in recent_messages:
+        author = msg.get('sender', 'Unknown')
+        content = msg.get('content', '(No content)')
+        send_message_to_conversation(conversation_sid, author, content)
+    
+    send_message_to_conversation(
+        conversation_sid,
+        "System",
+        "--- End of Context ---\nPlease assist this customer with their inquiry."
+    )
+    
+    return conversation_sid

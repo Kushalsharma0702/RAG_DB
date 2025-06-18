@@ -326,6 +326,53 @@
     }
   }
 
+  function showAgentConnectOptions() {
+    const chatBox = document.getElementById("chat-box");
+    const container = document.createElement("div");
+    container.className = "options-container";
+
+    const yesBtn = document.createElement("button");
+    yesBtn.className = "option-button";
+    yesBtn.textContent = "Yes, connect with agent";
+    yesBtn.onclick = () => handleAgentConnect(true);
+
+    const noBtn = document.createElement("button");
+    noBtn.className = "option-button";
+    noBtn.textContent = "No, continue with bot";
+    noBtn.onclick = () => handleAgentConnect(false);
+
+    container.appendChild(yesBtn);
+    container.appendChild(noBtn);
+    chatBox.appendChild(container);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
+
+  async function handleAgentConnect(connectAgent) {
+    removeOptions();
+    
+    if (connectAgent) {
+      addMessage("Thank you. I'll connect you with a live agent who can better assist you.", 'bot');
+      showLoader(true);
+      try {
+        await fetch("/connect_agent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_history: chatHistory })
+        });
+        addMessage("Your conversation has been routed to our support team. An agent will review your case and get back to you soon.", 'bot');
+      } catch (err) {
+        console.error("Error connecting to agent:", err);
+        addMessage("There was an issue connecting to an agent. Please try again later.", 'bot');
+      } finally {
+        showLoader(false);
+        resetToInitialState();
+      }
+    } else {
+      addMessage("I understand. Let's continue with our conversation. Is there something else I can help you with?", 'bot');
+      resetToInitialState();
+    }
+  }
+
   // This is the single, unified function to talk to the backend's /chat endpoint
   async function processChat(message) {
     showLoader(true);
@@ -345,17 +392,29 @@
         })
       });
       const data = await response.json();
+      
       if (response.ok) {
-        addMessage(data.reply, 'bot', true);
-        showFeedbackButtons();
+        if (data.needs_agent === true) {
+          // Bot indicates it can't answer this query
+          addMessage(data.reply, 'bot', true);
+          addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
+          showAgentConnectOptions();
+        } else {
+          // Normal successful response
+          addMessage(data.reply, 'bot', true);
+          showFeedbackButtons();
+        }
       } else {
+        // Error response
         addMessage(data.message || "Sorry, I couldn't fetch that information.", 'bot');
-        resetToInitialState();
+        addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
+        showAgentConnectOptions();
       }
     } catch (err) {
       console.error("Error processing chat:", err);
-      addMessage("A network error occurred while fetching your information.", 'bot');
-      resetToInitialState();
+      addMessage("A network error occurred while processing your request.", 'bot');
+      addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
+      showAgentConnectOptions();
     } finally {
       showLoader(false);
     }

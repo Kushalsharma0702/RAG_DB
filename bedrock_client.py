@@ -62,14 +62,6 @@ def invoke_claude_model(messages, model_id="arn:aws:bedrock:eu-north-1:844605843
 def generate_response(query_type, data, chat_history):
     """
     Generates a natural language response based on the query type and data retrieved.
-    
-    Args:
-        query_type (str): Type of query (emi, balance, loan)
-        data (dict): Data retrieved from the database
-        chat_history (list): Chat history for context
-        
-    Returns:
-        str: Generated natural language response
     """
     messages = parse_chat_history(chat_history)
     prompt_text = ""
@@ -94,13 +86,37 @@ def generate_response(query_type, data, chat_history):
         next_due_amount = data.get("next_due_amount", "N/A")
         recent_payments = data.get("recent_payments", [])
 
+        # Format the EMI message with more validation
+        if monthly_emi and monthly_emi != "N/A":
+            try:
+                # Try to format as a numeric value with commas
+                monthly_emi_float = float(monthly_emi)
+                monthly_emi = f"{monthly_emi_float:,.2f}"
+            except:
+                pass  # Keep as is if not convertible
+        
+        if next_due_amount and next_due_amount != "N/A":
+            try:
+                next_due_amount_float = float(next_due_amount)
+                next_due_amount = f"{next_due_amount_float:,.2f}"
+            except:
+                pass  # Keep as is if not convertible
+
         recent_payments_str = ""
         if recent_payments:
             for payment in recent_payments:
-                display_date = payment['date']
+                display_date = payment.get('date')
                 if isinstance(display_date, date):
                     display_date = display_date.strftime("%B %d, %Y")
-                recent_payments_str += f"    * On **{display_date}**, you paid **₹{payment['amount']}**.\n"
+                
+                amount = payment.get('amount', '0')
+                try:
+                    amount_float = float(amount)
+                    amount = f"{amount_float:,.2f}"
+                except:
+                    pass  # Keep as is if not convertible
+                
+                recent_payments_str += f"    * On **{display_date}**, you paid **₹{amount}**.\n"
         else:
             recent_payments_str = "    * No recent payment details available.\n"
 
@@ -124,6 +140,7 @@ Output Format:
 Do you have any other questions about your EMI or loan?"
 
 Please ensure all monetary values are bolded. Maintain the exact formatting including bullet points and line breaks.
+If the next_due_date is "N/A", say "No upcoming EMI scheduled" instead.
 """
     elif query_type == "balance":
         balance = data.get("balance", "N/A")

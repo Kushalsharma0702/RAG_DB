@@ -236,17 +236,28 @@ def chat():
     logging.info(f"🏆 Using query_type={query_type} for account_id={account_id}")
 
     if query_type == 'unclear':
-        reply = "I'm not sure what financial information you're looking for. Could you please specify if you want to know about your EMI, account balance, or loan details?"
+        # When we can't determine the intent, offer to connect with agent
+        reply = "I'm not sure what financial information you're looking for. I can provide information about EMI, account balance, or loan details."
         save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='intent_unclear', intent=query_type)
-        return jsonify({"status": "success", "reply": reply})
+        return jsonify({"status": "success", "reply": reply, "needs_agent": True})
 
     data = fetch_data(query_type, account_id)
     if not data:
+        # When we can't fetch data, offer to connect with agent
         logging.warning(f"❌ Data fetch failed for {query_type} (account_id={account_id})")
-        reply = f"I couldn't find any information for your {query_type} query. Please check if the details are correct or contact support."
+        reply = f"I couldn't find any information for your {query_type} query. This could be because the data doesn't exist in our system or there might be an issue accessing it."
         save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='query_failed', intent=query_type)
-        return jsonify({"status": "success", "reply": reply})
+        return jsonify({"status": "success", "reply": reply, "needs_agent": True})
 
+    # Try to handle complex or edge cases
+    if "out_of_scope" in user_message.lower() or any(word in user_message.lower() for word in ["complex", "difficult", "complicated", "help", "agent", "human", "talk", "speak"]):
+        # User may be asking for something complex or directly requesting an agent
+        logging.info(f"Complex or agent request detected: {user_message}")
+        reply = "This seems like a complex query that might be better handled by one of our human agents."
+        save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='complex_query', intent=query_type)
+        return jsonify({"status": "success", "reply": reply, "needs_agent": True})
+
+    # Normal successful flow
     logging.info(f"🏆 Data fetched for {query_type} (account_id={account_id})")
     reply = generate_response(query_type, data, chat_history)
     save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='query_resolved', intent=query_type)
@@ -353,6 +364,84 @@ def handle_ozonetel_voice():
         return answer
     else:
         return "Invalid stage."
+
+@app.route("/connect_agent", methods=["POST"])
+def connect_agent():
+    """
+    Endpoint to handle agent connection requests.
+    This will save the chat history to the RAG document table and
+    create a Twilio conversation for the handoff.
+    """
+    chat_history = request.json.get("chat_history", [])
+    customer_id = session.get('customer_id')
+    customer_phone_number = session.get('phone_number')
+    current_session_id = str(session.get('session_id', uuid.uuid4()))
+
+    if not customer_id:
+        logging.warning("Warning: Customer ID not found in session for agent connection.")
+        return jsonify({"status": "error", "message": "Customer ID not found in session."}), 400
+
+    try:
+        # Generate a summary of the conversation
+        summary_text = get_chat_summary(chat_history)
+        summary_embedding = get_embedding(summary_text)
+
+        # Save the conversation summary to RAG document table
+        if summary_embedding is not None:
+            save_unresolved_chat(
+                customer_id=customer_id,
+                summary=summary_text,
+                embedding=summary_embedding
+            )
+            
+            # Create a Twilio conversation and add the customer and agent
+            conversation_sid = _create_or_get_conversation_and_add_participants(
+                customer_id=str(customer_id),
+                customer_phone_number=customer_phone_number
+            )
+
+            if conversation_sid:
+                # Send the conversation summary to Twilio
+                _send_message_to_conversation(
+                    conversation_sid, 
+                    author="System", 
+                    message_body=f"A user ({customer_id}) has requested agent assistance.\n\nSummary:\n{summary_text}"
+                )
+
+                # Include the last few messages for context
+                _send_message_to_conversation(conversation_sid, author="System", message_body="--- Recent Chat History ---")
+                # Only send the last 5 messages to avoid cluttering the agent interface
+                recent_messages = chat_history[-5:] if len(chat_history) > 5 else chat_history
+                for msg in recent_messages:
+                    _send_message_to_conversation(
+                        conversation_sid,
+                        author=msg['sender'],
+                        message_body=msg['content']
+                    )
+                
+                logging.info(f"✅ Messages sent to conversation {conversation_sid}")
+                logging.info(f"🔁 Chat routed to agent. Conversation SID: {conversation_sid}")
+                
+                # Save the interaction in the database
+                save_chat_interaction(
+                    session_id=current_session_id, 
+                    sender='system', 
+                    message_text="Conversation routed to human agent.", 
+                    customer_id=customer_id, 
+                    stage='agent_handoff'
+                )
+                
+                return jsonify({"status": "success", "message": "Chat routed to agent successfully."})
+            else:
+                logging.error("❌ Failed to create/get conversation for agent handoff.")
+                return jsonify({"status": "error", "message": "Failed to connect with agent. Please try again later."}), 500
+        else:
+            logging.error(f"Failed to generate embedding for chat summary for customer {customer_id}.")
+            return jsonify({"status": "error", "message": "Failed to generate summary for agent handoff."}), 500
+
+    except Exception as e:
+        logging.error(f"Error in connect_agent: {e}")
+        return jsonify({"status": "error", "message": "An error occurred during agent connection."}), 500
 
 
 if __name__ == '__main__':

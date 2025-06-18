@@ -16,6 +16,18 @@ def classify_intent(message):
     # Convert to lowercase for case-insensitive matching
     message = message.lower()
     
+    # Check for agent request patterns
+    agent_request_patterns = [
+        r'speak.*agent', r'talk.*agent', r'human', r'real person',
+        r'customer service', r'representative', r'speak.*person', r'talk.*person',
+        r'not.*understand', r'confused', r'complicated', r'complex', r'difficult'
+    ]
+    
+    for pattern in agent_request_patterns:
+        if re.search(pattern, message):
+            # This will be handled in the app.py chat endpoint
+            return "unclear"
+    
     # EMI related keywords
     emi_patterns = [
         r'\bemi\b', 

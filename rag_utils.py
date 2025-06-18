@@ -2,106 +2,128 @@
 
 from database import engine
 from sqlalchemy import text
-from datetime import datetime, date # Import date for type checking
+from datetime import datetime, date
 import logging
+import decimal
 
 def fetch_data(query_type, account_id):
     with engine.connect() as conn:
         logging.info(f"Fetching {query_type} data for account_id={account_id}")
         if query_type == "balance":
+            # ...existing code...
             result = conn.execute(text("SELECT balance FROM customer_account WHERE account_id=:aid"), {"aid": account_id}).fetchone()
             if result:
                 return {"balance": float(result[0])}
             return None
 
         elif query_type == "emi":
-            # Improved EMI query with better columns and sorting
-            emi_records = conn.execute(text("""
-                SELECT
-                    e.due_date,
-                    e.amount_due,
-                    e.status,
-                    e.payment_date,
-                    e.amount_paid,
-                    l.principal_amount,
-                    l.tenure_months,
-                    l.principal_amount / l.tenure_months AS calculated_monthly_emi
-                FROM emi e
-                JOIN loan l ON e.loan_id = l.loan_id
-                WHERE l.customer_id = (SELECT customer_id FROM customer_account WHERE account_id = :aid)
-                ORDER BY e.due_date ASC
-            """), {"aid": account_id}).fetchall()
-
-            if not emi_records:
-                logging.warning(f"No EMI records found for account_id={account_id}")
+            # Debug: Check if we have EMI records in the database
+            debug_check = conn.execute(text("SELECT COUNT(*) FROM emi")).fetchone()
+            logging.info(f"Total EMI records in database: {debug_check[0]}")
+            
+            # Get customer_id for the account first
+            customer_record = conn.execute(text(
+                "SELECT customer_id FROM customer_account WHERE account_id = :aid"
+            ), {"aid": account_id}).fetchone()
+            
+            if not customer_record:
+                logging.warning(f"No customer found for account_id={account_id}")
                 return None
-
-            emi_list_raw = [dict(r._mapping) for r in emi_records]
+                
+            customer_id = customer_record[0]
+            logging.info(f"Found customer_id={customer_id} for account_id={account_id}")
             
-            # Log the raw data for debugging
-            logging.info(f"Raw EMI data found: {len(emi_list_raw)} records")
-
-            # Calculate monthly EMI - get it from the calculated field
-            monthly_emi = None
-            if emi_list_raw and 'calculated_monthly_emi' in emi_list_raw[0]:
-                monthly_emi = str(round(float(emi_list_raw[0]['calculated_monthly_emi']), 2))
+            # Get loan records for this customer
+            loan_records = conn.execute(text("""
+                SELECT loan_id, principal_amount, tenure_months, status 
+                FROM loan 
+                WHERE customer_id = :cid
+            """), {"cid": customer_id}).fetchall()
             
+            if not loan_records:
+                logging.warning(f"No loan records found for customer_id={customer_id}")
+                return None
+                
+            # Get the active loan
+            loan_id = None
+            principal = None
+            tenure = None
+            
+            for loan in loan_records:
+                if loan[3] == 'active':  # Check if loan status is active
+                    loan_id = loan[0]
+                    principal = float(loan[1])
+                    tenure = loan[2]
+                    break
+            
+            if not loan_id:
+                loan_id = loan_records[0][0]  # Take the first loan if no active loan
+                principal = float(loan_records[0][1])
+                tenure = loan_records[0][2]
+            
+            logging.info(f"Using loan_id={loan_id} with principal={principal} and tenure={tenure}")
+            
+            # Calculate monthly EMI
+            monthly_emi = round(principal / tenure, 2) if tenure else 0
+            
+            # Get EMI records for this loan
+            emi_records = conn.execute(text("""
+                SELECT due_date, amount_due, status, payment_date, amount_paid
+                FROM emi
+                WHERE loan_id = :lid
+                ORDER BY due_date ASC
+            """), {"lid": loan_id}).fetchall()
+            
+            # Process EMI records
             next_due_date = None
             next_due_amount = None
-            recent_payments = []
+            paid_emis = []
             current_date = date.today()
             
-            # Process all EMI records
-            for emi in emi_list_raw:
-                # Convert dates safely
-                due_date = emi.get('due_date')
+            for emi in emi_records:
+                due_date = emi[0]
                 if isinstance(due_date, datetime):
                     due_date = due_date.date()
                 
-                payment_date = emi.get('payment_date')
-                if isinstance(payment_date, datetime):
+                amount_due = float(emi[1])
+                status = emi[2]
+                payment_date = emi[3]
+                amount_paid = emi[4]
+                
+                if payment_date and isinstance(payment_date, datetime):
                     payment_date = payment_date.date()
                 
-                # Add paid EMIs to recent payments
-                if emi.get('status') == 'paid' and payment_date is not None:
-                    amount_paid = emi.get('amount_paid')
-                    if amount_paid is None:
-                        amount_paid = emi.get('amount_due', 0)
-                    
-                    recent_payments.append({
-                        "date": payment_date,
-                        "amount": str(amount_paid)
+                # Add to paid EMIs list if status is 'paid'
+                if status == 'paid' and payment_date:
+                    paid_emis.append({
+                        'date': payment_date,
+                        'amount': str(amount_paid or amount_due)
                     })
                 
-                # Find the next due EMI
-                if emi.get('status') == 'due' and due_date is not None:
-                    if due_date >= current_date and next_due_date is None:
-                        next_due_date = due_date
-                        next_due_amount = str(emi.get('amount_due', 0))
-
-            # Sort recent payments by date (newest first) and take top 3
-            recent_payments = sorted(recent_payments, key=lambda x: x['date'], reverse=True)[:3]
-
-            # Format the next due date nicely if it exists
-            formatted_next_due_date = None
-            if next_due_date:
-                try:
-                    formatted_next_due_date = next_due_date.strftime("%Y-%m-%d")
-                except:
-                    formatted_next_due_date = str(next_due_date)
-
-            # Build and return the result
+                # Find next due EMI (due date >= today and status is 'due')
+                if status == 'due' and due_date and due_date >= current_date and next_due_date is None:
+                    next_due_date = due_date
+                    next_due_amount = str(amount_due)
+            
+            # Sort paid EMIs by date (newest first) and take last 3
+            recent_payments = sorted(paid_emis, key=lambda x: x['date'], reverse=True)[:3]
+            
+            # Debug: Log what we found
+            logging.info(f"Found {len(recent_payments)} recent payments")
+            logging.info(f"Next due date: {next_due_date}, amount: {next_due_amount}")
+            
+            # Format the result
             result = {
-                "monthly_emi": monthly_emi or "N/A",
+                "monthly_emi": str(monthly_emi),
                 "recent_payments": recent_payments,
-                "next_due_date": formatted_next_due_date or "N/A",
+                "next_due_date": next_due_date,
                 "next_due_amount": next_due_amount or "N/A"
             }
             
-            logging.info(f"Processed EMI data: {result}")
             return result
 
         elif query_type == "loan":
+            # ...existing code...
             result = conn.execute(text("""
                 SELECT loan_type, principal_amount, interest_rate FROM loan
                 WHERE customer_id = (SELECT customer_id FROM customer_account WHERE account_id = :aid)
