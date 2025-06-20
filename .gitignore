@@ -1,2 +1,9 @@
 .env
 env
+Dockerfile
+docker-compose.yml
+synthetic_customer_account.csv
+synthetic_customers.csv
+synthetic_emis_cleaned.csv
+synthetic_loans.csv
+synthetic_transaction_history.csv

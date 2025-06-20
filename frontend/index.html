@@ -1,502 +1,502 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Financial Chatbot</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-<style>
-  body {
-    font-family: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
-    background: #f5f7f9;
-    color: #333;
-    margin: 0; padding: 0;
-    display: flex; flex-direction: column; height: 100vh;
-  }
-  header {
-    background: #1e3a8a;
-    color: white;
-    padding: 1rem;
-    text-align: center;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  }
-  #chat-box {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1.5rem;
-    background: #f5f7f9;
-    display: flex;
-    flex-direction: column;
-  }
-  p.bot {
-    background: white;
-    padding: 0.8rem 1.2rem;
-    border-radius: 18px;
-    border-top-left-radius: 4px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-    max-width: 75%;
-    margin: 0.5rem 0;
-    line-height: 1.5;
-    color: #333;
-    align-self: flex-start;
-    position: relative;
-  }
-  p.user {
-    background: #1e3a8a;
-    padding: 0.8rem 1.2rem;
-    border-radius: 18px;
-    border-top-right-radius: 4px;
-    color: white;
-    max-width: 75%;
-    margin: 0.5rem 0;
-    line-height: 1.5;
-    align-self: flex-end;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-  }
-  p.bot strong {
-    color: #1e3a8a;
-    font-weight: 600;
-  }
-  p.bot ul {
-    list-style-type: disc;
-    margin-left: 1.5rem;
-    padding-left: 0;
-  }
-  p.bot li {
-    margin-bottom: 0.5rem;
-  }
-  #input-area {
-    display: flex;
-    background: white;
-    padding: 1rem;
-    border-top: 1px solid #e5e7eb;
-    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
-  }
-  #user-input {
-    flex: 1;
-    padding: 0.8rem 1.2rem;
-    border: 1px solid #d1d5db;
-    border-radius: 24px;
-    font-size: 1rem;
-    background: white;
-    color: #333;
-    resize: none;
-    overflow: hidden;
-    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
-    transition: border-color 0.2s;
-  }
-  #user-input:focus {
-    outline: none;
-    border-color: #1e3a8a;
-    box-shadow: 0 0 0 2px rgba(30,58,138,0.2);
-  }
-  button.option-button {
-    margin: 0.3rem;
-    padding: 0.7rem 1.5rem;
-    background: white;
-    border: 1px solid #1e3a8a;
-    border-radius: 24px;
-    color: #1e3a8a;
-    cursor: pointer;
-    font-weight: 500;
-    transition: all 0.2s;
-  }
-  button.option-button:hover {
-    background: #1e3a8a;
-    color: white;
-  }
-  .options-container, .feedback-container {
-    margin: 1rem 0;
-    display: flex;
-    gap: 0.8rem;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  button.feedback-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.6rem;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: 1px solid #e5e7eb;
-    cursor: pointer;
-    background-color: white;
-    color: #6b7280;
-    transition: all 0.2s;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  }
-  button.feedback-button:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-  }
-  button.feedback-button.positive:hover {
-    background-color: #ecfdf5;
-    color: #10b981;
-    border-color: #10b981;
-  }
-  button.feedback-button.negative:hover {
-    background-color: #fef2f2;
-    color: #ef4444;
-    border-color: #ef4444;
-  }
-  #loader {
-    display: none;
-    text-align: center;
-    padding: 1rem;
-    color: #6b7280;
-  }
-  .typing-indicator {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 8px 12px;
-    background: white;
-    border-radius: 18px;
-    width: fit-content;
-    margin: 0.5rem 0;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-  }
-  .typing-indicator span {
-    width: 8px;
-    height: 8px;
-    background: #d1d5db;
-    border-radius: 50%;
-    display: inline-block;
-    animation: typing 1.4s infinite ease-in-out both;
-  }
-  .typing-indicator span:nth-child(1) { animation-delay: 0s; }
-  .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-  .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-  
-  @keyframes typing {
-    0%, 100% { transform: scale(0.7); opacity: 0.5; }
-    50% { transform: scale(1); opacity: 1; }
-  }
-</style>
-<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-</head>
-<body>
-  <header>
-    <h1>Financial Assistant</h1>
-  </header>
-  <div id="chat-box"></div>
-  <div id="loader" class="typing-indicator">
-    <span></span><span></span><span></span>
-  </div>
-  <div id="input-area">
-    <textarea id="user-input" rows="1" placeholder="Type your message and press Enter..."></textarea>
-  </div>
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Financial Chatbot</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <style>
+    body {
+      font-family: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f7f9;
+      color: #333;
+      margin: 0; padding: 0;
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    header {
+      background: #1e3a8a;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    #chat-box {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      background: #f5f7f9;
+      display: flex;
+      flex-direction: column;
+    }
+    p.bot {
+      background: white;
+      padding: 0.8rem 1.2rem;
+      border-radius: 18px;
+      border-top-left-radius: 4px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      max-width: 75%;
+      margin: 0.5rem 0;
+      line-height: 1.5;
+      color: #333;
+      align-self: flex-start;
+      position: relative;
+    }
+    p.user {
+      background: #1e3a8a;
+      padding: 0.8rem 1.2rem;
+      border-radius: 18px;
+      border-top-right-radius: 4px;
+      color: white;
+      max-width: 75%;
+      margin: 0.5rem 0;
+      line-height: 1.5;
+      align-self: flex-end;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    p.bot strong {
+      color: #1e3a8a;
+      font-weight: 600;
+    }
+    p.bot ul {
+      list-style-type: disc;
+      margin-left: 1.5rem;
+      padding-left: 0;
+    }
+    p.bot li {
+      margin-bottom: 0.5rem;
+    }
+    #input-area {
+      display: flex;
+      background: white;
+      padding: 1rem;
+      border-top: 1px solid #e5e7eb;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+    }
+    #user-input {
+      flex: 1;
+      padding: 0.8rem 1.2rem;
+      border: 1px solid #d1d5db;
+      border-radius: 24px;
+      font-size: 1rem;
+      background: white;
+      color: #333;
+      resize: none;
+      overflow: hidden;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+      transition: border-color 0.2s;
+    }
+    #user-input:focus {
+      outline: none;
+      border-color: #1e3a8a;
+      box-shadow: 0 0 0 2px rgba(30,58,138,0.2);
+    }
+    button.option-button {
+      margin: 0.3rem;
+      padding: 0.7rem 1.5rem;
+      background: white;
+      border: 1px solid #1e3a8a;
+      border-radius: 24px;
+      color: #1e3a8a;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    button.option-button:hover {
+      background: #1e3a8a;
+      color: white;
+    }
+    .options-container, .feedback-container {
+      margin: 1rem 0;
+      display: flex;
+      gap: 0.8rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    button.feedback-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0.6rem;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid #e5e7eb;
+      cursor: pointer;
+      background-color: white;
+      color: #6b7280;
+      transition: all 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    button.feedback-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    button.feedback-button.positive:hover {
+      background-color: #ecfdf5;
+      color: #10b981;
+      border-color: #10b981;
+    }
+    button.feedback-button.negative:hover {
+      background-color: #fef2f2;
+      color: #ef4444;
+      border-color: #ef4444;
+    }
+    #loader {
+      display: none;
+      text-align: center;
+      padding: 1rem;
+      color: #6b7280;
+    }
+    .typing-indicator {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 12px;
+      background: white;
+      border-radius: 18px;
+      width: fit-content;
+      margin: 0.5rem 0;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .typing-indicator span {
+      width: 8px;
+      height: 8px;
+      background: #d1d5db;
+      border-radius: 50%;
+      display: inline-block;
+      animation: typing 1.4s infinite ease-in-out both;
+    }
+    .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+    .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+    .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+    
+    @keyframes typing {
+      0%, 100% { transform: scale(0.7); opacity: 0.5; }
+      50% { transform: scale(1); opacity: 1; }
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Financial Assistant</h1>
+    </header>
+    <div id="chat-box"></div>
+    <div id="loader" class="typing-indicator">
+      <span></span><span></span><span></span>
+    </div>
+    <div id="input-area">
+      <textarea id="user-input" rows="1" placeholder="Type your message and press Enter..."></textarea>
+    </div>
 
-<script>
-  // --- START OF CORRECTED SCRIPT ---
+  <script>
+    // --- START OF CORRECTED SCRIPT ---
 
-  // 'stage' now controls the conversation flow:
-  // 0 = Waiting for initial query (text or button)
-  // 1 = Waiting for Account ID
-  // 2 = Waiting for OTP
-  // 3 = Authenticated and ready to chat
-  let stage = 0;
-  let chatHistory = [];
-  let pendingMessage = ""; // To store the user's first query during auth
+    // 'stage' now controls the conversation flow:
+    // 0 = Waiting for initial query (text or button)
+    // 1 = Waiting for Account ID
+    // 2 = Waiting for OTP
+    // 3 = Authenticated and ready to chat
+    let stage = 0;
+    let chatHistory = [];
+    let pendingMessage = ""; // To store the user's first query during auth
 
-  window.onload = function () {
-    const userInput = document.getElementById("user-input");
-    userInput.addEventListener("input", function() {
-        this.style.height = "auto";
-        this.style.height = (this.scrollHeight) + "px";
-    });
+    window.onload = function () {
+      const userInput = document.getElementById("user-input");
+      userInput.addEventListener("input", function() {
+          this.style.height = "auto";
+          this.style.height = (this.scrollHeight) + "px";
+      });
 
-    setTimeout(() => {
-      addMessage("Hello! I am your financial assistant. You can ask me about your EMI, account balance, or loan details. You can also select an option below.", 'bot');
-      showOptions();
-    }, 1000);
+      setTimeout(() => {
+        addMessage("Hello! I am your financial assistant. You can ask me about your EMI, account balance, or loan details. You can also select an option below.", 'bot');
+        showOptions();
+      }, 1000);
 
-    userInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        handleUserInput();
-      }
-    });
-  };
+      userInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          handleUserInput();
+        }
+      });
+    };
 
-  function showOptions() {
-    const options = [
-      { text: "My EMI", value: "emi" },
-      { text: "My Account Balance", value: "balance" },
-      { text: "My Loan Amount", value: "loan" }
-    ];
-    const chatBox = document.getElementById("chat-box");
-    const container = document.createElement("div");
-    container.className = "options-container";
+    function showOptions() {
+      const options = [
+        { text: "My EMI", value: "emi" },
+        { text: "My Account Balance", value: "balance" },
+        { text: "My Loan Amount", value: "loan" }
+      ];
+      const chatBox = document.getElementById("chat-box");
+      const container = document.createElement("div");
+      container.className = "options-container";
 
-    options.forEach(opt => {
-      const btn = document.createElement("button");
-      btn.className = "option-button";
-      btn.textContent = opt.text;
-      btn.onclick = () => handleOption(opt.value, opt.text);
-      container.appendChild(btn);
-    });
+      options.forEach(opt => {
+        const btn = document.createElement("button");
+        btn.className = "option-button";
+        btn.textContent = opt.text;
+        btn.onclick = () => handleOption(opt.value, opt.text);
+        container.appendChild(btn);
+      });
 
-    chatBox.appendChild(container);
-    chatBox.scrollTop = chatBox.scrollHeight;
-  }
+      chatBox.appendChild(container);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
 
-  function handleOption(value, label) {
-    // Treat the button click like a typed message
-    pendingMessage = value; // Store the intent value directly
-    addMessage(label, 'user');
-    removeOptions();
-    addMessage("Understood. To proceed, please enter your Account ID:", 'bot');
-    stage = 1;
-  }
-
-  function removeOptions() {
-    const opts = document.querySelector(".options-container");
-    if (opts) opts.remove();
-  }
-
-  async function handleUserInput() {
-    const inputField = document.getElementById("user-input");
-    const input = inputField.value.trim();
-    if (!input) return;
-    addMessage(input, 'user');
-    inputField.value = "";
-    inputField.style.height = "auto";
-
-    if (stage === 0) {
-      // Stage 0: User types their first query
-      pendingMessage = input; // Store the query
+    function handleOption(value, label) {
+      // Treat the button click like a typed message
+      pendingMessage = value; // Store the intent value directly
+      addMessage(label, 'user');
       removeOptions();
       addMessage("Understood. To proceed, please enter your Account ID:", 'bot');
       stage = 1;
+    }
 
-    } else if (stage === 1) {
-      // Stage 1: User enters Account ID
-      const accountId = input;
-      showLoader(true);
-      try {
-        const response = await fetch("/send_otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ account_id: accountId })
-        });
-        const data = await response.json();
-        addMessage(data.message || "An unknown error occurred.", 'bot');
-        if (response.ok) {
-          stage = 2; // Move to OTP stage only on success
-        }
-      } catch (err) {
-        console.error("Error sending OTP:", err);
-        addMessage("A network error occurred while sending the OTP.", 'bot');
-      } finally {
-        showLoader(false);
-      }
+    function removeOptions() {
+      const opts = document.querySelector(".options-container");
+      if (opts) opts.remove();
+    }
 
-    } else if (stage === 2) {
-      // Stage 2: User enters OTP
-      const otp = input;
-      showLoader(true);
-      try {
-        const response = await fetch("/verify_otp", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ otp: otp })
-        });
-        const data = await response.json();
-        addMessage(data.message || "An unknown error occurred.", 'bot');
-        if (response.ok) {
-          stage = 3; // Authentication successful
-          // FIX: Only send the original query (pendingMessage) to /chat, not "Fetching your information..."
-          showLoader(true);
-          await processChat(pendingMessage);
+    async function handleUserInput() {
+      const inputField = document.getElementById("user-input");
+      const input = inputField.value.trim();
+      if (!input) return;
+      addMessage(input, 'user');
+      inputField.value = "";
+      inputField.style.height = "auto";
+
+      if (stage === 0) {
+        // Stage 0: User types their first query
+        pendingMessage = input; // Store the query
+        removeOptions();
+        addMessage("Understood. To proceed, please enter your Account ID:", 'bot');
+        stage = 1;
+
+      } else if (stage === 1) {
+        // Stage 1: User enters Account ID
+        const accountId = input;
+        showLoader(true);
+        try {
+          const response = await fetch("/send_otp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ account_id: accountId })
+          });
+          const data = await response.json();
+          addMessage(data.message || "An unknown error occurred.", 'bot');
+          if (response.ok) {
+            stage = 2; // Move to OTP stage only on success
+          }
+        } catch (err) {
+          console.error("Error sending OTP:", err);
+          addMessage("A network error occurred while sending the OTP.", 'bot');
+        } finally {
           showLoader(false);
         }
-      } catch (err) {
-        console.error("Error verifying OTP:", err);
-        addMessage("A network error occurred while verifying the OTP.", 'bot');
-      } finally {
-        showLoader(false);
+
+      } else if (stage === 2) {
+        // Stage 2: User enters OTP
+        const otp = input;
+        showLoader(true);
+        try {
+          const response = await fetch("/verify_otp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ otp: otp })
+          });
+          const data = await response.json();
+          addMessage(data.message || "An unknown error occurred.", 'bot');
+          if (response.ok) {
+            stage = 3; // Authentication successful
+            // FIX: Only send the original query (pendingMessage) to /chat, not "Fetching your information..."
+            showLoader(true);
+            await processChat(pendingMessage);
+            showLoader(false);
+          }
+        } catch (err) {
+          console.error("Error verifying OTP:", err);
+          addMessage("A network error occurred while verifying the OTP.", 'bot');
+        } finally {
+          showLoader(false);
+        }
+
+      } else if (stage === 3) {
+        // Stage 3: Authenticated user sends a follow-up message
+        await processChat(input);
       }
-
-    } else if (stage === 3) {
-      // Stage 3: Authenticated user sends a follow-up message
-      await processChat(input);
     }
-  }
 
-  function showAgentConnectOptions() {
-    const chatBox = document.getElementById("chat-box");
-    const container = document.createElement("div");
-    container.className = "options-container";
+    function showAgentConnectOptions() {
+      const chatBox = document.getElementById("chat-box");
+      const container = document.createElement("div");
+      container.className = "options-container";
 
-    const yesBtn = document.createElement("button");
-    yesBtn.className = "option-button";
-    yesBtn.textContent = "Yes, connect with agent";
-    yesBtn.onclick = () => handleAgentConnect(true);
+      const yesBtn = document.createElement("button");
+      yesBtn.className = "option-button";
+      yesBtn.textContent = "Yes, connect with agent";
+      yesBtn.onclick = () => handleAgentConnect(true);
 
-    const noBtn = document.createElement("button");
-    noBtn.className = "option-button";
-    noBtn.textContent = "No, continue with bot";
-    noBtn.onclick = () => handleAgentConnect(false);
+      const noBtn = document.createElement("button");
+      noBtn.className = "option-button";
+      noBtn.textContent = "No, continue with bot";
+      noBtn.onclick = () => handleAgentConnect(false);
 
-    container.appendChild(yesBtn);
-    container.appendChild(noBtn);
-    chatBox.appendChild(container);
-    chatBox.scrollTop = chatBox.scrollHeight;
-  }
-
-  async function handleAgentConnect(connectAgent) {
-    removeOptions();
-    
-    if (connectAgent) {
-      addMessage("Thank you. I'll connect you with a live agent who can better assist you.", 'bot');
-      showLoader(true);
-      try {
-        await fetch("/connect_agent", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_history: chatHistory })
-        });
-        addMessage("Your conversation has been routed to our support team. An agent will review your case and get back to you soon.", 'bot');
-      } catch (err) {
-        console.error("Error connecting to agent:", err);
-        addMessage("There was an issue connecting to an agent. Please try again later.", 'bot');
-      } finally {
-        showLoader(false);
-        resetToInitialState();
-      }
-    } else {
-      addMessage("I understand. Let's continue with our conversation. Is there something else I can help you with?", 'bot');
-      resetToInitialState();
+      container.appendChild(yesBtn);
+      container.appendChild(noBtn);
+      chatBox.appendChild(container);
+      chatBox.scrollTop = chatBox.scrollHeight;
     }
-  }
 
-  // This is the single, unified function to talk to the backend's /chat endpoint
-  async function processChat(message) {
-    showLoader(true);
-    try {
-      // Make sure we're using proper object structure for chat history
-      const formattedChatHistory = chatHistory.map(entry => ({
-        sender: entry.sender,
-        content: entry.content
-      }));
+    async function handleAgentConnect(connectAgent) {
+      removeOptions();
       
-      const response = await fetch("/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: message,
-          chat_history: formattedChatHistory
-        })
-      });
-      const data = await response.json();
-      
-      if (response.ok) {
-        if (data.needs_agent === true) {
-          // Bot indicates it can't answer this query
-          addMessage(data.reply, 'bot', true);
-          addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
-          showAgentConnectOptions();
-        } else {
-          // Normal successful response
-          addMessage(data.reply, 'bot', true);
-          showFeedbackButtons();
+      if (connectAgent) {
+        addMessage("Thank you. I'll connect you with a live agent who can better assist you.", 'bot');
+        showLoader(true);
+        try {
+          await fetch("/connect_agent", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_history: chatHistory })
+          });
+          addMessage("Your conversation has been routed to our support team. An agent will review your case and get back to you soon.", 'bot');
+        } catch (err) {
+          console.error("Error connecting to agent:", err);
+          addMessage("There was an issue connecting to an agent. Please try again later.", 'bot');
+        } finally {
+          showLoader(false);
+          resetToInitialState();
         }
       } else {
-        // Error response
-        addMessage(data.message || "Sorry, I couldn't fetch that information.", 'bot');
-        addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
-        showAgentConnectOptions();
+        addMessage("I understand. Let's continue with our conversation. Is there something else I can help you with?", 'bot');
+        resetToInitialState();
       }
-    } catch (err) {
-      console.error("Error processing chat:", err);
-      addMessage("A network error occurred while processing your request.", 'bot');
-      addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
-      showAgentConnectOptions();
-    } finally {
-      showLoader(false);
     }
-  }
 
-  function addMessage(msg, sender, isMarkdown = false) {
-    const chatBox = document.getElementById("chat-box");
-    const message = document.createElement("p");
-    message.className = sender;
-
-    if (isMarkdown && sender === 'bot') {
-      message.innerHTML = marked.parse(msg);
-    } else {
-      message.textContent = msg;
-    }
-    chatBox.appendChild(message);
-    chatBox.scrollTop = chatBox.scrollHeight;
-
-    chatHistory.push({ sender: sender, content: msg });
-  }
-
-  function showLoader(show) {
-    const loader = document.getElementById("loader");
-    loader.style.display = show ? "block" : "none";
-  }
-
-  function showFeedbackButtons() {
-    // Remove any existing feedback buttons before adding new ones
-    document.querySelector(".feedback-container")?.remove();
-    
-    const chatBox = document.getElementById("chat-box");
-    const feedbackContainer = document.createElement("div");
-    feedbackContainer.className = "feedback-container";
-
-    const positiveBtn = document.createElement("button");
-    positiveBtn.className = "feedback-button positive";
-    positiveBtn.innerHTML = '<i class="fas fa-thumbs-up"></i>';
-    positiveBtn.title = "Helpful";
-    positiveBtn.onclick = () => sendFeedback(true);
-
-    const negativeBtn = document.createElement("button");
-    negativeBtn.className = "feedback-button negative";
-    negativeBtn.innerHTML = '<i class="fas fa-thumbs-down"></i>';
-    negativeBtn.title = "Not Helpful";
-    negativeBtn.onclick = () => sendFeedback(false);
-
-    feedbackContainer.appendChild(positiveBtn);
-    feedbackContainer.appendChild(negativeBtn);
-    chatBox.appendChild(feedbackContainer);
-    chatBox.scrollTop = chatBox.scrollHeight;
-  }
-
-  async function sendFeedback(isUseful) {
-    document.querySelector(".feedback-container")?.remove();
-    addMessage("Thank you for your feedback!", 'bot');
-
-    if (!isUseful) {
-      addMessage("I've logged this conversation for review by a human agent to help improve my responses.", 'bot');
+    // This is the single, unified function to talk to the backend's /chat endpoint
+    async function processChat(message) {
+      showLoader(true);
       try {
-        // NOTE: Ensure the /summarize_chat route is active (uncommented) in your app.py
-        await fetch("/summarize_chat", {
+        // Make sure we're using proper object structure for chat history
+        const formattedChatHistory = chatHistory.map(entry => ({
+          sender: entry.sender,
+          content: entry.content
+        }));
+        
+        const response = await fetch("/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_history: chatHistory }),
+          body: JSON.stringify({
+            message: message,
+            chat_history: formattedChatHistory
+          })
         });
+        const data = await response.json();
+        
+        if (response.ok) {
+          if (data.needs_agent === true) {
+            // Bot indicates it can't answer this query
+            addMessage(data.reply, 'bot', true);
+            addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
+            showAgentConnectOptions();
+          } else {
+            // Normal successful response
+            addMessage(data.reply, 'bot', true);
+            showFeedbackButtons();
+          }
+        } else {
+          // Error response
+          addMessage(data.message || "Sorry, I couldn't fetch that information.", 'bot');
+          addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
+          showAgentConnectOptions();
+        }
       } catch (err) {
-        console.error("Error sending summary:", err);
+        console.error("Error processing chat:", err);
+        addMessage("A network error occurred while processing your request.", 'bot');
+        addMessage("Would you like me to connect you with a live agent who can help with this?", 'bot');
+        showAgentConnectOptions();
+      } finally {
+        showLoader(false);
       }
     }
-    resetToInitialState();
-  }
 
-  function resetToInitialState() {
-     setTimeout(() => {
-        addMessage("Is there anything else I can help you with?", 'bot');
-        stage = 3; // Keep user authenticated for the next query
-        pendingMessage = "";
-        showOptions();
-    }, 1500);
-  }
+    function addMessage(msg, sender, isMarkdown = false) {
+      const chatBox = document.getElementById("chat-box");
+      const message = document.createElement("p");
+      message.className = sender;
 
-  // --- END OF CORRECTED SCRIPT ---
-</script>
-</body>
-</html>
+      if (isMarkdown && sender === 'bot') {
+        message.innerHTML = marked.parse(msg);
+      } else {
+        message.textContent = msg;
+      }
+      chatBox.appendChild(message);
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      chatHistory.push({ sender: sender, content: msg });
+    }
+
+    function showLoader(show) {
+      const loader = document.getElementById("loader");
+      loader.style.display = show ? "block" : "none";
+    }
+
+    function showFeedbackButtons() {
+      // Remove any existing feedback buttons before adding new ones
+      document.querySelector(".feedback-container")?.remove();
+      
+      const chatBox = document.getElementById("chat-box");
+      const feedbackContainer = document.createElement("div");
+      feedbackContainer.className = "feedback-container";
+
+      const positiveBtn = document.createElement("button");
+      positiveBtn.className = "feedback-button positive";
+      positiveBtn.innerHTML = '<i class="fas fa-thumbs-up"></i>';
+      positiveBtn.title = "Helpful";
+      positiveBtn.onclick = () => sendFeedback(true);
+
+      const negativeBtn = document.createElement("button");
+      negativeBtn.className = "feedback-button negative";
+      negativeBtn.innerHTML = '<i class="fas fa-thumbs-down"></i>';
+      negativeBtn.title = "Not Helpful";
+      negativeBtn.onclick = () => sendFeedback(false);
+
+      feedbackContainer.appendChild(positiveBtn);
+      feedbackContainer.appendChild(negativeBtn);
+      chatBox.appendChild(feedbackContainer);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+
+    async function sendFeedback(isUseful) {
+      document.querySelector(".feedback-container")?.remove();
+      addMessage("Thank you for your feedback!", 'bot');
+
+      if (!isUseful) {
+        addMessage("I've logged this conversation for review by a human agent to help improve my responses.", 'bot');
+        try {
+          // NOTE: Ensure the /summarize_chat route is active (uncommented) in your app.py
+          await fetch("/summarize_chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_history: chatHistory }),
+          });
+        } catch (err) {
+          console.error("Error sending summary:", err);
+        }
+      }
+      resetToInitialState();
+    }
+
+    function resetToInitialState() {
+      setTimeout(() => {
+          addMessage("Is there anything else I can help you with?", 'bot');
+          stage = 3; // Keep user authenticated for the next query
+          pendingMessage = "";
+          showOptions();
+      }, 1500);
+    }
+
+    // --- END OF CORRECTED SCRIPT ---
+  </script>
+  </body>
+  </html>

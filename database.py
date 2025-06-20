@@ -1,6 +1,8 @@
 # database.py
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import create_engine, Column, String, DateTime, Text, Boolean, DECIMAL, ForeignKey, Integer, text
 
-from sqlalchemy import create_engine, Column, String, DateTime, Text, Boolean, UUID, DECIMAL, ForeignKey, Integer, text
+# from sqlalchemy import create_engine, Column, String, DateTime, Text, Boolean, UUID, DECIMAL, ForeignKey, Integer, text
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import sessionmaker

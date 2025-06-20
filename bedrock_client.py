@@ -133,9 +133,7 @@ Output Format:
 "Thanks for verifying! Here's a breakdown of your **EMI details**:
 
 * Your **monthly EMI amount** is **₹{monthly_emi}**.
-* **Recent Payments:**
-{recent_payments_str}
-* Your **next EMI payment** of **₹{next_due_amount}** is scheduled for the **{next_due_date}**.
+
 
 Do you have any other questions about your EMI or loan?"
 
