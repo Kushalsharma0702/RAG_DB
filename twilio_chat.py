@@ -1,14 +1,34 @@
 from twilio.rest import Client
 import logging
-from config import TWILIO_SID, TWILIO_AUTH_TOKEN, TWILIO_CONVERSATIONS_SERVICE_SID # Ensure TWILIO_CONVERSATIONS_SERVICE_SID is imported here
 import json # Import json for attributes
+import uuid
+import datetime # Import datetime
+from config import (
+    TWILIO_SID, 
+    TWILIO_AUTH_TOKEN, 
+    TWILIO_CONVERSATIONS_SERVICE_SID,
+    TWILIO_TASK_ROUTER_WORKFLOW_SID,
+    TWILIO_TASK_ROUTER_WORKSPACE_SID
+)
 
 client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+
+# Custom JSON encoder to handle UUID and datetime objects
+class CustomJsonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, uuid.UUID):
+            # Convert UUID to string
+            return str(obj)
+        if isinstance(obj, datetime.datetime):
+            # Convert datetime to ISO 8601 string
+            return obj.isoformat()
+        return json.JSONEncoder.default(self, obj)
 
 def create_conversation(user_id):
     """
     Creates a new Twilio Conversation within the configured service,
-    and adds the customer and a generic agent as participants.
+    and adds the customer as a participant.
+    NOTE: Agent participant is NOT added here, as Task Router will handle that.
     """
     conversation_sid = None
     conversation_unique_name = f"customer_{user_id}_handoff"
@@ -49,19 +69,6 @@ def create_conversation(user_id):
                     logging.error(f"Error adding customer {user_id} to conversation {conversation_sid}: {e_customer_add}")
                 else:
                     logging.info(f"Customer {user_id} already participant in conversation {conversation_sid}")
-
-            # Add a generic agent as participant to the conversation within the service
-            try:
-                agent_identity = "live_agent_1" # This identity should match your agent's identity
-                client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
-                    .conversations(conversation_sid) \
-                    .participants.create(identity=agent_identity, attributes=json.dumps({"type": "agent"}))
-                logging.info(f"Agent {agent_identity} added as participant to conversation {conversation_sid}")
-            except Exception as e_agent_add:
-                if "Participant already exists" not in str(e_agent_add):
-                    logging.error(f"Error adding agent {agent_identity} to conversation {conversation_sid}: {e_agent_add}")
-                else:
-                    logging.info(f"Agent {agent_identity} already participant in conversation {conversation_sid}")
         
         return conversation_sid
 
@@ -69,7 +76,7 @@ def create_conversation(user_id):
         logging.error(f"❌ Error in create_conversation (Twilio): {e}")
         return None
 
-def send_message_to_conversation(conversation_sid, sender_id, message):
+def send_message_to_conversation(conversation_sid, author, message_body):
     """
     Sends a message into a Twilio Conversation within the configured service.
     """
@@ -77,25 +84,52 @@ def send_message_to_conversation(conversation_sid, sender_id, message):
         client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
             .conversations(conversation_sid) \
             .messages.create(
-                author=sender_id,
-                body=message
+                author=author,
+                body=message_body
             )
-        logging.info(f"✅ Message sent to conversation {conversation_sid} by {sender_id}")
+        logging.info(f"✅ Message sent to conversation {conversation_sid} by {author}")
     except Exception as e:
         logging.error(f"❌ Error sending message to conversation {conversation_sid}: {e}")
+        return None # Explicitly return None on error for consistency
+
+def create_task_for_handoff(customer_id, phone_number, summary, recent_messages, conversation_sid):
+    """
+    Creates a Twilio Task Router Task for agent handoff.
+    """
+    try:
+        # Prepare task attributes
+        task_attributes = {
+            "customer_id": customer_id,
+            "phone_number": phone_number,
+            "summary": summary,
+            "recent_messages": recent_messages,
+            "conversation_sid": conversation_sid,
+            "type": "chat_handoff",
+            "task_creation_time": datetime.datetime.now(), # Example of a datetime object
+            # Add any other skills or metadata needed for routing, e.g.:
+            # "required_skills": ["chat_support", "financial_expert"],
+            # "priority": 10
+        }
+
+        # Use the custom encoder when dumping to JSON
+        task = client.taskrouter.v1.workspaces(TWILIO_TASK_ROUTER_WORKSPACE_SID) \
+            .tasks.create(
+                workflow_sid=TWILIO_TASK_ROUTER_WORKFLOW_SID,
+                attributes=json.dumps(task_attributes, cls=CustomJsonEncoder) # Use the updated custom encoder
+            )
+        
+        logging.info(f"🏆 Task created for customer {customer_id}: {task.sid}")
+        return task.sid
+    except Exception as e:
+        logging.error(f"❌ Error creating Task Router task for customer {customer_id}: {e}")
+        return None
 
 def create_and_send_to_agent(customer_id, phone_number, summary, recent_messages):
     """
-    Comprehensive function to create a conversation, add participants, and send messages.
-    
-    Args:
-        customer_id (str): Customer's ID
-        phone_number (str): Customer's phone number
-        summary (str): Summary of the conversation
-        recent_messages (list): List of recent messages for context
-        
-    Returns:
-        str: Conversation SID if successful, None otherwise
+    This function's role changes when using Task Router. It primarily ensures
+    the conversation exists and sends initial context messages.
+    The actual 'sending to agent' (i.e., agent participant addition)
+    is now handled by Task Router.
     """
     conversation_sid = create_conversation(customer_id)
     
@@ -107,7 +141,7 @@ def create_and_send_to_agent(customer_id, phone_number, summary, recent_messages
     send_message_to_conversation(
         conversation_sid,
         "System",
-        f"Customer {customer_id} (Phone: {phone_number}) has requested assistance:\n\n{summary}"
+        f"Customer {customer_id} (Phone: {phone_number}) has requested assistance:\n\nSummary:\n{summary}"
     )
     
     # Send recent messages
@@ -123,4 +157,7 @@ def create_and_send_to_agent(customer_id, phone_number, summary, recent_messages
         "--- End of Context ---\nPlease assist this customer with their inquiry."
     )
     
+    # This function now simply sets up the conversation and sends initial context.
+    # The actual task creation for agent routing happens in app.py's
+    # summarize_chat_route or connect_agent endpoint.
     return conversation_sid

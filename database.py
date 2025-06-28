@@ -112,12 +112,13 @@ class ClientInteraction(Base):
 
 class RAGDocument(Base):
     __tablename__ = 'rag_document'
-    document_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    customer_id = Column(String(20), ForeignKey('customer.customer_id'))
-    document_text = Column(Text)
-    # Change 'vector_embedding' to 'embedding' to match the SQL schema
-    embedding = Column(Vector(1024), nullable=True)
-    created_at = Column(DateTime, default=datetime.now)
+    document_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    customer_id = Column(String(50), ForeignKey('customers.customer_id'), nullable=False)
+    document_text = Column(Text, nullable=False)
+    embedding = Column(Vector(1536))  # For storing OpenAI embeddings
+    created_at = Column(DateTime, default=datetime.utcnow)
+    task_id = Column(String(50), nullable=True)  # To store Twilio Task ID
+    status = Column(String(20), default='pending')  # pending, in_process, resolved
 
 def create_tables():
     try:

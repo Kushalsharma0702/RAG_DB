@@ -178,24 +178,27 @@ def get_chat_summary(chat_history):
     messages.append({
         "role": "user",
         "content": [{
-            "type": "text",
-            "text": """You are an assistant generating summaries for customer service representatives.
+  "type": "text",
+  "text": """You are a customer support assistant summarizing conversations.
 
-Please review the conversation and generate a **clear and concise summary** containing:
-- The user’s intent (e.g., EMI inquiry, balance check, loan details)
-- Key information mentioned by the user
-- What the assistant responded with
-- Any specific issues, complaints, or next steps discussed
+Summarize this chat with:
+- **Intent**: What the user wanted (EMI details, balance, etc.)
+- **User Info**: Key account details discussed
+- **Bot Response**: What was shared
+- **Issue**: If unresolved, why?
+- **Escalation Required**: Yes/No
 
-Format:
-**Summary**:
-- **Intent**: ...
-- **Key Info**: ...
-- **Assistant Response**: ...
-- **Follow-up Needed**: (yes/no)
+Format the summary as:
 
-Keep the summary human-readable, concise, and useful for agents reviewing past conversations."""
-        }]
+**Summary**
+- Intent: ...
+- User Info: ...
+- Bot Response: ...
+- Issue: ...
+- Escalation Required: ...
+
+Keep the response under 1000 tokens and easy for humans to read."""
+}]
     })
 
     return invoke_claude_model(messages)

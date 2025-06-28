@@ -20,7 +20,11 @@ from database import (
 )
 from rag_utils import fetch_data
 from db_migration import run_migration
-from config import TWILIO_SID, TWILIO_AUTH_TOKEN, TWILIO_CONVERSATIONS_SERVICE_SID, TWILIO_PHONE
+from config import (
+    TWILIO_SID, TWILIO_AUTH_TOKEN, TWILIO_CONVERSATIONS_SERVICE_SID, TWILIO_PHONE,
+    TWILIO_TASK_ROUTER_WORKSPACE_SID, TWILIO_TASK_ROUTER_WORKFLOW_SID # Import Task Router SIDs
+)
+from twilio_chat import create_conversation, send_message_to_conversation, create_task_for_handoff # Import twilio_chat functions
 
 load_dotenv()
 
@@ -44,77 +48,10 @@ with app.app_context():
         print(f"Warning: Database migration encountered an issue: {e}")
         print("The application will continue, but some features may not work correctly.")
 
-def _create_or_get_conversation_and_add_participants(customer_id, customer_phone_number):
-    conversation_sid = None
-    conversation_unique_name = f"customer_{customer_id}_handoff"
-    friendly_name = f"Chat with {customer_id}"
-
-    try:
-        try:
-            conversation = twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
-                            .conversations.get(conversation_unique_name).fetch()
-            conversation_sid = conversation.sid
-            logging.info(f"Existing conversation found for {customer_id}: {conversation_sid}")
-        except Exception as e_get:
-            # Modified this line to be more robust
-            if "not found" in str(e_get).lower():
-                logging.info(f"No existing conversation with unique name '{conversation_unique_name}'. Attempting to create a new one.")
-                try:
-                    conversation = twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
-                                    .conversations.create(
-                                        friendly_name=friendly_name,
-                                        unique_name=conversation_unique_name,
-                                        attributes=json.dumps({"customer_id": customer_id})
-                                    )
-                    conversation_sid = conversation.sid
-                    logging.info(f"New conversation created for {customer_id} in service {TWILIO_CONVERSATIONS_SERVICE_SID}: {conversation_sid}")
-                except Exception as e_create:
-                    logging.error(f"❌ Error creating new conversation for {customer_id}: {e_create}")
-                    return None
-            else:
-                logging.error(f"❌ Unexpected error fetching conversation by unique name: {e_get}")
-                return None
-
-        if conversation_sid:
-            try:
-                twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
-                    .conversations(conversation_sid) \
-                    .participants.create(identity=customer_id, attributes=json.dumps({"type": "customer", "phone_number": customer_phone_number}))
-                logging.info(f"Customer {customer_id} added as participant to conversation {conversation_sid}")
-            except Exception as e_customer_add:
-                if "Participant already exists" not in str(e_customer_add):
-                    logging.error(f"❌ Error adding customer {customer_id} to conversation {conversation_sid}: {e_customer_add}")
-                else:
-                    logging.info(f"Customer {customer_id} already participant in conversation {conversation_sid}")
-
-            try:
-                agent_identity = "live_agent_1"
-                twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
-                    .conversations(conversation_sid) \
-                    .participants.create(identity=agent_identity, attributes=json.dumps({"type": "agent"}))
-                logging.info(f"Agent {agent_identity} added as participant to conversation {conversation_sid}")
-            except Exception as e_agent_add:
-                if "Participant already exists" not in str(e_agent_add):
-                    logging.error(f"❌ Error adding agent {agent_identity} to conversation {conversation_sid}: {e_agent_add}")
-                else:
-                    logging.info(f"Agent {agent_identity} already participant in conversation {conversation_sid}")
-        
-        return conversation_sid
-
-    except Exception as e:
-        logging.error(f"❌ General error in _create_or_get_conversation_and_add_participants: {e}")
-        return None
-
-def _send_message_to_conversation(conversation_sid, author, message_body):
-    try:
-        message = twilio_client.conversations.v1.services(TWILIO_CONVERSATIONS_SERVICE_SID) \
-                        .conversations(conversation_sid) \
-                        .messages.create(author=author, body=message_body)
-        logging.info(f"Message sent to conversation {conversation_sid} by {author}")
-        return message.sid
-    except Exception as e:
-        logging.error(f"❌ Error sending message to conversation {conversation_sid}: {e}")
-        return None
+# Removed the internal _create_or_get_conversation_and_add_participants
+# and _send_message_to_conversation functions from app.py
+# because we now directly use the functions from twilio_chat.py.
+# This centralizes Twilio-related logic.
 
 @app.route('/')
 def serve_frontend():
@@ -179,7 +116,13 @@ def otp_verification():
         reply = "OTP validated successfully."
         session['authenticated'] = True
         save_chat_interaction(session_id=current_session_id, sender='bot', message_text=reply, customer_id=customer_id, stage='otp_verified')
-        return jsonify({"status": "success", "message": reply})
+        
+        # Return customer_id in the response so it can be stored client-side
+        return jsonify({
+            "status": "success", 
+            "message": reply,
+            "customer_id": customer_id  # Add this line
+        })
     else:
         logging.warning(f"❌ OTP verification failed for phone {phone_number}")
         reply = message or "Invalid OTP. Please try again."
@@ -286,13 +229,14 @@ def summarize_chat_route():
                 embedding=summary_embedding
             )
             
-            conversation_sid = _create_or_get_conversation_and_add_participants(
-                customer_id=str(customer_id),
-                customer_phone_number=customer_phone_number
+            # Use create_conversation from twilio_chat.py
+            conversation_sid = create_conversation(
+                user_id=str(customer_id)
             )
 
             if conversation_sid:
-                _send_message_to_conversation(
+                # Send the conversation summary to Twilio using send_message_to_conversation
+                send_message_to_conversation(
                     conversation_sid, 
                     author="System", 
                     message_body=f"A user ({customer_id}) has reported an unresolved issue and requires agent assistance.\n\nSummary:\n{summary_text}"
@@ -300,21 +244,35 @@ def summarize_chat_route():
 
                 last_three_chats = get_last_three_chats(customer_id)
                 if last_three_chats:
-                    _send_message_to_conversation(conversation_sid, author="System", message_body="--- Last 3 Chat Interactions ---")
+                    send_message_to_conversation(conversation_sid, author="System", message_body="--- Last 3 Chat Interactions ---")
                     for chat in last_three_chats:
-                        _send_message_to_conversation(
+                        send_message_to_conversation(
                             conversation_sid,
                             author=chat['sender'],
                             message_body=chat['message_text']
                         )
                 
-                logging.info(f"✅ Messages sent to conversation {conversation_sid}")
-                logging.info(f"🔁 Chat routed to agent. Conversation SID: {conversation_sid}")
+                # Create a Task Router Task for agent handoff
+                task_sid = create_task_for_handoff(
+                    customer_id=customer_id,
+                    phone_number=customer_phone_number,
+                    summary=summary_text,
+                    recent_messages=last_three_chats, # Pass recent chat history for context in Task
+                    conversation_sid=conversation_sid
+                )
+
+                if task_sid:
+                    logging.info(f"🏆 Task Router Task {task_sid} created for customer {customer_id}.")
+                    logging.info(f"✅ Messages sent to conversation {conversation_sid}")
+                    logging.info(f"🔁 Chat routed to agent via Task Router. Conversation SID: {conversation_sid}")
+                else:
+                    logging.error(f"❌ Failed to create Task Router Task for customer {customer_id}.")
+                
             else:
-                logging.error("❌ Failed to create/get conversation or add participants for agent handoff.")
+                logging.error("❌ Failed to create/get conversation for agent handoff.")
 
             print(f"Saved unresolved chat summary and embedding for customer {customer_id} (Session: {current_session_id})")
-            return jsonify({"status": "success", "message": "Chat summary and embedding saved."})
+            return jsonify({"status": "success", "message": "Chat summary and embedding saved and routed via Task Router."})
         else:
             print(f"Failed to generate embedding for chat summary for customer {customer_id}.")
             return jsonify({"status": "error", "message": "Failed to generate embedding for summary."}), 500
@@ -365,12 +323,81 @@ def handle_ozonetel_voice():
     else:
         return "Invalid stage."
 
+from flask import render_template_string
+from database import Session
+from database import RAGDocument, Customer
+
+@app.route("/agent-dashboard")
+def serve_agent_dashboard():
+    return send_from_directory(app.static_folder, 'agent_dashboard.html')
+
+@app.route("/agent/unresolved_sessions")
+def get_unresolved_sessions():
+    session_db = Session()
+    try:
+        result = session_db.query(RAGDocument, Customer.phone_number).join(
+            Customer, Customer.customer_id == RAGDocument.customer_id
+        ).order_by(RAGDocument.created_at.desc()).limit(10).all()
+        sessions = [{
+            "customer_id": r.RAGDocument.customer_id,
+            "document_text": r.RAGDocument.document_text,
+            "created_at": r.RAGDocument.created_at.strftime("%Y-%m-%d %H:%M"),
+            "phone_number": r.phone_number
+        } for r in result]
+        return jsonify({"status": "success", "sessions": sessions})
+    except Exception as e:
+        print("Error fetching unresolved sessions:", e)
+        return jsonify({"status": "error", "message": "Could not fetch sessions"}), 500
+    finally:
+        session_db.close()
+
+@app.route("/create_taskrouter_test_task", methods=["POST"])
+def create_test_task():
+    # This endpoint is for testing purposes and needs your actual SIDs.
+    # Replace placeholders with your actual TWILIO_TASK_ROUTER_WORKSPACE_SID and TWILIO_TASK_ROUTER_WORKFLOW_SID
+    # from config.py or environment variables.
+    workspace_sid = TWILIO_TASK_ROUTER_WORKSPACE_SID
+    workflow_sid = TWILIO_TASK_ROUTER_WORKFLOW_SID
+
+    if not workspace_sid or not workflow_sid:
+        return jsonify({"status": "error", "message": "Task Router SIDs are not configured."}), 500
+
+    try:
+        task = twilio_client.taskrouter.workspaces(workspace_sid).tasks.create(
+            workflow_sid=workflow_sid,
+            attributes=json.dumps({
+                "type": "chat_handoff",
+                "customer_id": "CID_TEST_123",
+                "summary": "This is a test task created from Flask app.",
+                "session_id": "test-session-12345",
+                "phone_number": "+1234567890" # Example phone number
+            })
+        )
+        return jsonify({"message": "Test Task created", "task_sid": task.sid}), 200
+    except Exception as e:
+        logging.error(f"Error creating test Task Router task: {e}")
+        return jsonify({"status": "error", "message": f"Failed to create test task: {e}"}), 500
+
+
+@app.route('/webhook/taskrouter_assignment', methods=['POST'])
+def taskrouter_assignment():
+    from flask import request, jsonify
+
+    task_sid = request.form.get("TaskSid")
+    worker_sid = request.form.get("WorkerSid")
+    print(f"✅ Task assigned by Twilio TaskRouter!")
+    print(f"Task SID: {task_sid}")
+    print(f"Worker SID: {worker_sid}")
+
+    # Required JSON response
+    return jsonify(instruction="accept"), 200
+
 @app.route("/connect_agent", methods=["POST"])
 def connect_agent():
     """
     Endpoint to handle agent connection requests.
     This will save the chat history to the RAG document table and
-    create a Twilio conversation for the handoff.
+    create a Twilio conversation for the handoff, then create a Task Router Task.
     """
     chat_history = request.json.get("chat_history", [])
     customer_id = session.get('customer_id')
@@ -394,44 +421,57 @@ def connect_agent():
                 embedding=summary_embedding
             )
             
-            # Create a Twilio conversation and add the customer and agent
-            conversation_sid = _create_or_get_conversation_and_add_participants(
-                customer_id=str(customer_id),
-                customer_phone_number=customer_phone_number
+            # Create a Twilio conversation (agent not added here, Task Router will do it)
+            conversation_sid = create_conversation(
+                user_id=str(customer_id)
             )
 
             if conversation_sid:
                 # Send the conversation summary to Twilio
-                _send_message_to_conversation(
+                send_message_to_conversation(
                     conversation_sid, 
                     author="System", 
                     message_body=f"A user ({customer_id}) has requested agent assistance.\n\nSummary:\n{summary_text}"
                 )
 
                 # Include the last few messages for context
-                _send_message_to_conversation(conversation_sid, author="System", message_body="--- Recent Chat History ---")
+                send_message_to_conversation(conversation_sid, author="System", message_body="--- Recent Chat History ---")
                 # Only send the last 5 messages to avoid cluttering the agent interface
-                recent_messages = chat_history[-5:] if len(chat_history) > 5 else chat_history
-                for msg in recent_messages:
-                    _send_message_to_conversation(
+                recent_messages_for_context = chat_history[-5:] if len(chat_history) > 5 else chat_history
+                for msg in recent_messages_for_context:
+                    send_message_to_conversation(
                         conversation_sid,
                         author=msg['sender'],
                         message_body=msg['content']
                     )
                 
-                logging.info(f"✅ Messages sent to conversation {conversation_sid}")
-                logging.info(f"🔁 Chat routed to agent. Conversation SID: {conversation_sid}")
-                
-                # Save the interaction in the database
-                save_chat_interaction(
-                    session_id=current_session_id, 
-                    sender='system', 
-                    message_text="Conversation routed to human agent.", 
-                    customer_id=customer_id, 
-                    stage='agent_handoff'
+                # Create a Task Router Task for agent handoff
+                task_sid = create_task_for_handoff(
+                    customer_id=customer_id,
+                    phone_number=customer_phone_number,
+                    summary=summary_text,
+                    recent_messages=recent_messages_for_context, # Pass recent chat history for context in Task
+                    conversation_sid=conversation_sid
                 )
-                
-                return jsonify({"status": "success", "message": "Chat routed to agent successfully."})
+
+                if task_sid:
+                    logging.info(f"🏆 Task Router Task {task_sid} created for customer {customer_id}.")
+                    logging.info(f"✅ Messages sent to conversation {conversation_sid}")
+                    logging.info(f"🔁 Chat routed to agent via Task Router. Conversation SID: {conversation_sid}")
+                    
+                    # Save the interaction in the database
+                    save_chat_interaction(
+                        session_id=current_session_id, 
+                        sender='system', 
+                        message_text="Conversation routed to human agent via Task Router.", 
+                        customer_id=customer_id, 
+                        stage='agent_handoff'
+                    )
+                    
+                    return jsonify({"status": "success", "message": "Chat routed to agent successfully."})
+                else:
+                    logging.error(f"❌ Failed to create Task Router Task for customer {customer_id}.")
+                    return jsonify({"status": "error", "message": "Failed to create agent task. Please try again later."}), 500
             else:
                 logging.error("❌ Failed to create/get conversation for agent handoff.")
                 return jsonify({"status": "error", "message": "Failed to connect with agent. Please try again later."}), 500
@@ -443,6 +483,185 @@ def connect_agent():
         logging.error(f"Error in connect_agent: {e}")
         return jsonify({"status": "error", "message": "An error occurred during agent connection."}), 500
 
+@app.route("/agent-chat-interface")
+def serve_agent_chat_interface():
+    return send_from_directory(app.static_folder, 'agent_chat_interface.html')
+
+@app.route("/agent/send_message", methods=["POST"])
+def agent_send_message():
+    """
+    Endpoint for agent to send messages to the customer conversation.
+    """
+    customer_id = request.json.get("customer_id")
+    session_id = request.json.get("session_id")
+    message = request.json.get("message")
+    
+    if not customer_id or not message:
+        return jsonify({"status": "error", "message": "Missing required fields"}), 400
+    
+    # Validate session_id to prevent "undefined" errors
+    if not session_id or session_id == "undefined":
+        # Generate a valid UUID for this interaction
+        session_id = str(uuid.uuid4())
+        
+    try:
+        # First, save the agent message to our database
+        save_chat_interaction(
+            session_id=session_id,
+            sender='agent',
+            message_text=message,
+            customer_id=customer_id,
+            stage='agent_response'
+        )
+        
+        # Get customer information from database to retrieve phone number
+        customer_data = fetch_customer_by_id(customer_id)
+        if not customer_data:
+            return jsonify({"status": "error", "message": "Customer not found"}), 404
+            
+        # Create or get the Twilio conversation (customer participant only)
+        conversation_sid = create_conversation(
+            user_id=str(customer_id)
+        )
+        
+        if conversation_sid:
+            # Send the agent message to the conversation
+            send_message_to_conversation(
+                conversation_sid,
+                author="Agent",
+                message_body=message
+            )
+            
+            logging.info(f"✅ Agent message sent to conversation {conversation_sid}")
+            return jsonify({"status": "success", "message": "Message sent successfully"})
+        else:
+            return jsonify({"status": "error", "message": "Failed to send message to conversation"}), 500
+            
+    except Exception as e:
+        logging.error(f"Error in agent_send_message: {e}")
+        return jsonify({"status": "error", "message": "An error occurred while sending the message"}), 500
+
+# Add this function to fetch customer by ID
+def fetch_customer_by_id(customer_id):
+    session_db = Session()
+    try:
+        customer = session_db.query(Customer).filter(Customer.customer_id == customer_id).first()
+        if customer:
+            # Note: The Customer model doesn't seem to have 'account_id' directly.
+            # Assuming it can be fetched via customer_id from a related table if needed elsewhere.
+            return {
+                'customer_id': customer.customer_id,
+                'phone_number': customer.phone_number,
+                # 'account_id': customer.account_id # If Customer model had account_id
+            }
+        return None
+    except Exception as e:
+        logging.error(f"Error fetching customer by ID: {e}")
+        return None
+    finally:
+        session_db.close()
+@app.route('/agent/update_task_status', methods=['POST'])
+def update_task_status():
+    """
+    Update the status of a Twilio Task Router task
+    """
+    task_id = request.json.get('task_id')
+    status = request.json.get('status')
+    
+    if not task_id or not status:
+        return jsonify({"status": "error", "message": "Task ID and status are required"}), 400
+    
+    # Check if this is a Twilio Task Router task or a local document ID
+    if task_id.startswith('WT'):
+        # It's a Twilio Task ID
+        try:
+            # Update the Twilio Task Router task
+            task = twilio_client.taskrouter.v1.workspaces(TWILIO_TASK_ROUTER_WORKSPACE_SID) \
+                .tasks(task_id) \
+                .update(
+                    assignment_status=status if status == 'completed' else 'pending',
+                    reason=f"Agent marked as {status}"
+                )
+            
+            # Also update our local database to keep track of status
+            session_db = Session()
+            rag_doc = session_db.query(RAGDocument).filter(RAGDocument.task_id == task_id).first()
+            if rag_doc:
+                rag_doc.status = status
+                session_db.commit()
+            session_db.close()
+            
+            logging.info(f"✅ Task {task_id} status updated to {status}")
+            return jsonify({"status": "success", "message": f"Task status updated to {status}"})
+        
+        except Exception as e:
+            logging.error(f"❌ Error updating task status: {e}")
+            return jsonify({"status": "error", "message": f"Failed to update task status: {e}"}), 500
+    else:
+        # It's a local document ID
+        try:
+            session_db = Session()
+            rag_doc = session_db.query(RAGDocument).filter(RAGDocument.document_id == task_id).first()
+            if not rag_doc:
+                return jsonify({"status": "error", "message": "Document not found"}), 404
+            
+            rag_doc.status = status
+            session_db.commit()
+            session_db.close()
+            
+            logging.info(f"✅ Document {task_id} status updated to {status}")
+            return jsonify({"status": "success", "message": f"Document status updated to {status}"})
+        
+        except Exception as e:
+            logging.error(f"❌ Error updating document status: {e}")
+            return jsonify({"status": "error", "message": f"Failed to update document status: {e}"}), 500
+@app.route('/check_agent_messages', methods=['POST'])
+def check_agent_messages():
+    """
+    Endpoint for user interface to check for new agent messages.
+    Returns messages sent by agents after the last_check_time.
+    """
+    customer_id = request.json.get('customer_id')
+    last_check_time = request.json.get('last_check_time')
+    
+    if not customer_id or not last_check_time:
+        return jsonify({"status": "error", "message": "Missing required fields"}), 400
+    
+    try:
+        from datetime import datetime
+        from sqlalchemy import and_
+        from database import ChatInteraction
+        
+        # Convert string to datetime
+        last_check = datetime.fromisoformat(last_check_time.replace('Z', '+00:00'))
+        
+        # Query for new agent messages
+        session_db = Session()
+        new_messages = session_db.query(ChatInteraction).filter(
+            and_(
+                ChatInteraction.customer_id == customer_id,
+                ChatInteraction.sender == 'agent',
+                ChatInteraction.timestamp > last_check
+            )
+        ).order_by(ChatInteraction.timestamp.asc()).all()
+        
+        # Format messages for response
+        messages = [{
+            'message_text': msg.message_text,
+            'timestamp': msg.timestamp.isoformat(),
+            'session_id': msg.session_id
+        } for msg in new_messages]
+        
+        session_db.close()
+        
+        return jsonify({
+            "status": "success", 
+            "messages": messages
+        })
+        
+    except Exception as e:
+        logging.error(f"Error checking for agent messages: {e}")
+        return jsonify({"status": "error", "message": "Failed to check for new messages"}), 500
 
 if __name__ == '__main__':
      app.run(debug=True, host='0.0.0.0', port=5504)
