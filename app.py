@@ -226,7 +226,6 @@ def summarize_chat_route():
     current_session_id = str(session.get('session_id', uuid.uuid4()))
 
     if not customer_id:
-        print("Warning: Customer ID not found in session for summarization.")
         return jsonify({"status": "error", "message": "Customer ID not found in session. Summary not saved."}), 400
 
     try:
@@ -234,7 +233,7 @@ def summarize_chat_route():
         summary_embedding = get_embedding(summary_text)
 
         if summary_embedding is not None:
-            save_unresolved_chat(
+            document_id = save_unresolved_chat(
                 customer_id=customer_id,
                 summary=summary_text,
                 embedding=summary_embedding
@@ -244,15 +243,13 @@ def summarize_chat_route():
             conversation_sid = create_conversation(
                 user_id=str(customer_id)
             )
-
             if conversation_sid:
-                # Send the conversation summary to Twilio using send_message_to_conversation
                 send_message_to_conversation(
-                    conversation_sid, 
-                    author="System", 
+                    conversation_sid,
+                    author="System",
                     message_body=f"A user ({customer_id}) has reported an unresolved issue and requires agent assistance.\n\nSummary:\n{summary_text}"
                 )
-
+                # Optionally send last 3-5 messages for context
                 last_three_chats = get_last_three_chats(customer_id)
                 if last_three_chats:
                     send_message_to_conversation(conversation_sid, author="System", message_body="--- Last 3 Chat Interactions ---")
@@ -553,43 +550,18 @@ def connect_agent():
                 )
 
                 if task_sid:
-                    # Update the RAG document with the task_sid
-                    session_db = Session()
-                    rag_doc = session_db.query(RAGDocument).filter(
-                        RAGDocument.document_id == document_id
-                    ).first()
-                    if rag_doc:
-                        rag_doc.task_id = task_sid
-                        rag_doc.status = 'pending'
-                        session_db.commit()
-                    session_db.close()
-                    
-                    logging.info(f"🏆 Task Router Task {task_sid} created for customer {customer_id}.")
-                    logging.info(f"✅ Messages sent to conversation {conversation_sid}")
-                    logging.info(f"🔁 Chat routed to agent via Task Router. Conversation SID: {conversation_sid}")
-                    
-                    # Save the interaction in the database
-                    save_chat_interaction(
-                        session_id=current_session_id, 
-                        sender='system', 
-                        message_text="Conversation routed to human agent via Task Router.", 
-                        customer_id=customer_id, 
-                        stage='agent_handoff'
-                    )
-                    
-                    # Notify all agents via Socket.IO
+                    # Optionally update RAGDocument with task_sid, status, etc.
+                    # Notify agents via Socket.IO
                     socketio.emit('new_escalated_chat', {
                         'customer_id': customer_id,
                         'timestamp': datetime.now().isoformat(),
-                        'summary': summary_text[:100] + '...',  # Send a preview
-                        'document_id': document_id if 'document_id' in locals() else None,
+                        'summary': summary_text[:100] + '...',
+                        'document_id': document_id,
                         'task_id': task_sid
                     }, room='agent_room')
-                    
                     return jsonify({"status": "success", "message": "Chat routed to agent successfully."})
                 else:
-                    logging.error(f"❌ Failed to create Task Router Task for customer {customer_id}.")
-                    return jsonify({"status": "error", "message": "Failed to create agent task. Please try again later."}), 500
+                    return jsonify({"status": "error", "message": "Failed to create agent task."}), 500
             else:
                 logging.error("❌ Failed to create/get conversation for agent handoff.")
                 return jsonify({"status": "error", "message": "Failed to connect with agent. Please try again later."}), 500

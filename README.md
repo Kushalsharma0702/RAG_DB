@@ -1,80 +1,70 @@
 # Financial Chatbot
 
-A chatbot for retrieving financial information including EMI details, account balance, and loan information. The chatbot uses AWS Bedrock for natural language processing and intent classification.
-
-## Prerequisites
-
-- Docker and Docker Compose
-- AWS account with Bedrock access
-- Twilio account (for OTP and agent handoff)
-
 ## Setup
 
-1. Clone this repository
-2. Create a `.env` file based on `.env.example` and fill in your credentials
-3. Build and start the containers:
+### Prerequisites
+- Python 3.8 or higher
+- pip (Python package installer)
 
-```bash
-docker-compose up -d
+### Installation
+
+1. Clone the repository:
+    ```bash
+    git clone https://github.com/yourusername/financial_chatbot.git
+    cd financial_chatbot
+    ```
+
+2. Create a virtual environment (recommended):
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows, use: venv\Scripts\activate
+    ```
+
+3. Install required packages:
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+### Required Modules
+- `pandas`: For data manipulation
+- `numpy`: For numerical operations
+- `transformers`: For NLP models
+- `torch`: For deep learning
+- `flask`: For web application (if applicable)
+- `matplotlib`: For data visualization
+- `scikit-learn`: For machine learning algorithms
+
+## Running the Application
+
+1. Start the chatbot:
+    ```bash
+    python src/main.py
+    ```
+
+2. For the web interface (if applicable):
+    ```bash
+    python src/app.py
+    ```
+
+3. For training the model:
+    ```bash
+    python src/train.py
+    ```
+
+## Configuration
+
+Modify `config.json` to adjust the chatbot parameters and settings.
+
+## Project Structure
 ```
-
-## Environment Variables
-
-The application uses the following environment variables, which can be set in the `.env` file:
-
-- AWS credentials for Bedrock
-- Twilio credentials for OTP and messaging
-- Database configuration
-- Flask configuration
-
-## Application Structure
-
-- `app.py`: Main Flask application
-- `bedrock_client.py`: Client for AWS Bedrock
-- `database.py`: Database models and utilities
-- `rag_utils.py`: Retrieval utilities for fetching financial data
-- `otp_manager.py`: OTP generation and validation
-- `twilio_chat.py`: Twilio integration for agent handoff
-- `intent_classifier.py`: Rule-based intent classification
-- `frontend/`: HTML/CSS/JS for the chatbot interface
-
-## Features
-
-- EMI details including monthly amount, past payments, and upcoming payments
-- Account balance information
-- Loan details including type, principal amount, and interest rate
-- OTP-based authentication
-- Agent handoff for complex queries
-- Conversation summarization for agent review
-
-## Containerization
-
-The application is containerized using Docker, with separate containers for:
-- The Flask application
-- PostgreSQL database with pgvector extension for embedding storage
-
-## Development
-
-For local development:
-
-1. Start the Docker Compose environment
-2. Make changes to the code
-3. Restart the containers to apply changes:
-
-```bash
-docker-compose restart app
-```
-
-## Troubleshooting
-
-If you encounter issues:
-
-1. Check the container logs:
-```bash
-docker-compose logs app
-```
-
-2. Ensure the database is accessible:
-```bash
-docker-compose exec db psql -U postgres -d financial_chatbot_db -c "SELECT 1"
+financial_chatbot/
+├── src/
+│   ├── main.py         # Main entry point
+│   ├── app.py          # Web interface
+│   ├── train.py        # Model training
+│   └── utils/          # Utility functions
+├── data/               # Dataset files
+├── models/             # Saved models
+├── config.json         # Configuration file
+└── README.md           # This file
 ```
