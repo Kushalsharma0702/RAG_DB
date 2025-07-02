@@ -18,7 +18,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:Kushal07#@localhost/financial_chatbot_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:Kushal07@localhost/financial_chatbot_db")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable not set.")
 
@@ -97,25 +97,27 @@ class Transaction(Base):
 class ClientInteraction(Base):
     __tablename__ = 'client_interaction'
     interaction_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    session_id = Column(UUID(as_uuid=True), nullable=False)
+    session_id = Column(String(50), nullable=False)
     customer_id = Column(String(20), ForeignKey('customer.customer_id'))
+    conversation_sid = Column(String(34))  # <-- Add this line
     timestamp = Column(DateTime, default=datetime.now)
-    sender = Column(String(10), nullable=False) # 'user' or 'bot'
+    sender = Column(String(20), nullable=False) # 'user' or 'bot'
     message_text = Column(Text, nullable=False)
-    intent = Column(String(50)) # e.g., 'emi', 'balance', 'loan', 'unclear'
-    stage = Column(String(50)) # e.g., 'account_id_entry', 'otp_prompt', 'otp_verified', 'chat_message', 'intent_unclear', 'query_resolved'
+    intent = Column(String(500))
+    stage = Column(Text)
     feedback_provided = Column(Boolean, default=False)
     feedback_positive = Column(Boolean)
-    raw_response_data = Column(JSONB) # To store raw JSON response from external APIs (like Bedrock or database)
-    embedding = Column(Vector(1536)) # For individual message embeddings if needed for advanced RAG
-    # conversation_summary_id = Column(UUID(as_uuid=True), ForeignKey('rag_document.document_id')) # Optional: for direct linking
+    raw_response_data = Column(Text)
+    embedding = Column(Vector(1024))
+    is_escalated = Column(Boolean)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 class RAGDocument(Base):
     __tablename__ = 'rag_document'
     document_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    customer_id = Column(String(50), ForeignKey('customers.customer_id'), nullable=False)
+    customer_id = Column(String(50), ForeignKey('customer.customer_id'), nullable=False)
     document_text = Column(Text, nullable=False)
-    embedding = Column(Vector(1536))  # For storing OpenAI embeddings
+    embedding = Column(Vector(1024))  # For storing OpenAI embeddings
     created_at = Column(DateTime, default=datetime.utcnow)
     task_id = Column(String(50), nullable=True)  # To store Twilio Task ID
     status = Column(String(20), default='pending')  # pending, in_process, resolved
@@ -174,24 +176,27 @@ def save_chat_interaction(session_id: uuid.UUID, sender: str, message_text: str,
         session.close()
 
 def save_unresolved_chat(customer_id: str, summary: str, embedding: list):
-    session = Session()
+    """Save an unresolved chat to the RAG document table and return the document_id"""
+    db = Session()
     try:
-        rag_doc = RAGDocument(
+        # Create a new RAGDocument - remove document_type parameter
+        document = RAGDocument(
             customer_id=customer_id,
             document_text=summary,
-            # Change 'vector_embedding' to 'embedding' to match the model field
             embedding=embedding,
-            created_at=datetime.now()
+            status='pending'  # Only use valid parameters defined in the model
         )
-        session.add(rag_doc)
-        session.commit()
-        return True
+        db.add(document)
+        db.commit()
+        
+        # Return the document ID for reference
+        return str(document.document_id)
     except Exception as e:
-        session.rollback()
+        db.rollback()
         logging.error(f"❌ Error saving unresolved chat summary: {e}")
-        return False
+        return None
     finally:
-        session.close()
+        db.close()
 
 def get_last_three_chats(customer_id):
     session = Session()

@@ -212,6 +212,7 @@
       text-align: right;
     }
   </style>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   </head>
   <body>
@@ -427,6 +428,7 @@
             showLoader(true);
             await processChat(pendingMessage);
             showLoader(false);
+            handleOtpVerificationSuccess(data);
           }
         } catch (err) {
           console.error("Error verifying OTP:", err);
@@ -627,7 +629,73 @@
       }, 1500);
     }
 
-    // --- END OF CORRECTED SCRIPT ---
+const socket = io();
+
+function joinCustomerRoom() {
+  const customerId = localStorage.getItem('customer_id');
+  if (customerId) {
+    socket.emit('join_customer_room', { customer_id: customerId });
+    console.log(`Joined room for customer ${customerId}`);
+  }
+}
+
+// Handle incoming agent messages
+// In index.html
+socket.on('new_message', function(data) {
+  console.log('Received new_message event:', data);
+  if (data.sender === 'agent') {
+    addAgentMessage(data.message, data.timestamp);
+  }
+});
+
+// Call this after successful OTP verification
+async function handleOtpVerificationSuccess(data) {
+  localStorage.setItem('authenticated', 'true');
+  localStorage.setItem('customer_id', data.customer_id);
+  
+  // Add this to join the customer room immediately
+  socket.emit('join_customer_room', { customer_id: data.customer_id });
+  console.log(`Joined room for customer ${data.customer_id}`);
+  
+  startCheckingForAgentMessages();
+}
+
+// --- END OF CORRECTED SCRIPT ---
+
+  // --- AGENT MESSAGE POLLING LOGIC START ---
+  let lastCheckTime = new Date().toISOString();
+
+  function pollAgentMessages() {
+    const customer_id = localStorage.getItem('customer_id');
+    if (!customer_id) return;
+
+    fetch('/check_agent_messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer_id, last_check_time: lastCheckTime })
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'success' && data.messages) {
+        data.messages.forEach(msg => {
+          // Display message in UI using your existing addAgentMessage function
+          addAgentMessage(msg.message_text, msg.timestamp);
+          lastCheckTime = msg.timestamp;
+        });
+      } else if (data.status !== 'success') {
+        console.error('Agent message error:', data.message);
+      }
+    })
+    .catch(err => console.error('Fetch error:', err));
+  }
+
+  // Start polling after authentication
+  window.addEventListener('load', () => {
+    if (localStorage.getItem('authenticated') === 'true') {
+      setInterval(pollAgentMessages, 3000);
+    }
+  });
+  // --- AGENT MESSAGE POLLING LOGIC END ---
   </script>
   </body>
   </html>

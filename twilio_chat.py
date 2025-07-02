@@ -4,14 +4,14 @@ import json # Import json for attributes
 import uuid
 import datetime # Import datetime
 from config import (
-    TWILIO_SID, 
+    TWILIO_ACCOUNT_SID, 
     TWILIO_AUTH_TOKEN, 
     TWILIO_CONVERSATIONS_SERVICE_SID,
     TWILIO_TASK_ROUTER_WORKFLOW_SID,
     TWILIO_TASK_ROUTER_WORKSPACE_SID
 )
 
-client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
 # Custom JSON encoder to handle UUID and datetime objects
 class CustomJsonEncoder(json.JSONEncoder):

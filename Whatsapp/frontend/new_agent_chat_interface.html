@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Chat Interface</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+  <style>
+    body {
+      font-family: 'Segoe UI', Roboto, -apple-system, BlinkMacSystemFont, sans-serif;
+      background: #f5f7f9;
+      color: #333;
+      margin: 0; padding: 0;
+      display: flex; flex-direction: column; height: 100vh;
+    }
+    header {
+      background: #1e3a8a;
+      color: white;
+      padding: 1rem;
+      text-align: center;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .customer-info {
+      font-size: 0.8rem;
+      background: rgba(255,255,255,0.1);
+      padding: 0.3rem 0.6rem;
+      border-radius: 4px;
+    }
+    .agent-badge {
+      background: #10b981;
+      color: white;
+      padding: 0.3rem 0.6rem;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      font-weight: bold;
+      margin-left: 1rem;
+    }
+    #chat-box {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      background: #f5f7f9;
+      display: flex;
+      flex-direction: column;
+    }
+    p.customer-message, p.system-message {
+      background: white;
+      padding: 0.8rem 1.2rem;
+      border-radius: 18px;
+      border-top-left-radius: 4px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      max-width: 75%;
+      margin: 0.5rem 0;
+      line-height: 1.5;
+      color: #333;
+      align-self: flex-start;
+    }
+    p.agent-message {
+      background: #1e3a8a;
+      padding: 0.8rem 1.2rem;
+      border-radius: 18px;
+      border-top-right-radius: 4px;
+      color: white;
+      max-width: 75%;
+      margin: 0.5rem 0;
+      line-height: 1.5;
+      align-self: flex-end;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+    .message-time {
+      font-size: 0.7em;
+      color: #888;
+      text-align: right;
+      margin-top: 5px;
+    }
+    p.agent-message .message-time {
+        color: #ddd; /* Lighter color for time on dark background */
+    }
+    #input-area {
+      display: flex;
+      background: white;
+      padding: 1rem;
+      border-top: 1px solid #e5e7eb;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+      align-items: center;
+    }
+    #agent-input {
+      flex: 1;
+      padding: 0.8rem 1.2rem;
+      border: 1px solid #d1d5db;
+      border-radius: 24px;
+      font-size: 1rem;
+      background: white;
+      color: #333;
+      resize: none;
+      overflow: hidden;
+      box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+      transition: border-color 0.2s;
+    }
+    #agent-input:focus {
+      outline: none;
+      border-color: #1e3a8a;
+      box-shadow: 0 0 0 2px rgba(30,58,138,0.2);
+    }
+    button.send-button {
+      background: #1e3a8a;
+      border: none;
+      border-radius: 50%;
+      width: 42px;
+      height: 42px;
+      color: white;
+      margin-left: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+      flex-shrink: 0;
+    }
+    button.send-button:hover {
+      background: #283b8a;
+    }
+    .end-chat-button {
+      background: #dc3545;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 5px;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background 0.2s;
+    }
+    .end-chat-button:hover {
+      background: #c82333;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="flex items-center">
+      <h1 class="text-2xl font-bold mr-4">Agent Chat</h1>
+      <div class="customer-info">
+        Customer ID: <span id="customer-id-display"></span>
+      </div>
+      <div class="agent-badge">Agent View</div>
+    </div>
+    <button class="end-chat-button" onclick="endChatSession()">End Chat</button>
+  </header>
+  <div id="chat-box"></div>
+  <div id="input-area">
+    <textarea id="agent-input" rows="1" placeholder="Type your message to customer..."></textarea>
+    <button class="send-button" onclick="sendAgentMessage()">
+      <i class="fas fa-paper-plane"></i>
+    </button>
+  </div>
+
+  <script>
+    let customerId = '';
+    let sessionId = ''; // This will be the session_id from the customer's chat
+    let lastFetchedTime = new Date().toISOString(); // Track the last time messages were fetched
+
+    window.onload = function() {
+      // Get customerId and sessionId from URL parameters
+      const urlParams = new URLSearchParams(window.location.search);
+      customerId = urlParams.get('customer_id');
+      sessionId = urlParams.get('session_id'); // Ensure sessionId is retrieved
+
+      if (!customerId || !sessionId) {
+        addMessage("Error: Customer ID or Session ID not provided in URL.", 'system-message');
+        return;
+      }
+      
+      document.getElementById('customer-id-display').textContent = customerId;
+
+      // Auto-resize textarea
+      const agentInput = document.getElementById("agent-input");
+      agentInput.addEventListener("input", function() {
+        this.style.height = "auto";
+        this.style.height = (this.scrollHeight) + "px";
+      });
+      
+      // Submit on Enter
+      agentInput.addEventListener("keydown", function(e) {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          sendAgentMessage();
+        }
+      });
+
+      // Load initial chat history
+      loadChatHistory();
+
+      // Poll for new customer messages every few seconds
+      setInterval(fetchNewCustomerMessages, 3000); // Poll every 3 seconds
+    };
+
+    async function loadChatHistory() {
+      if (!customerId || !sessionId) {
+        addMessage("Error: Cannot load chat history without Customer ID or Session ID.", 'system-message');
+        return;
+      }
+      addMessage("Loading chat history...", 'system-message');
+
+      try {
+        const response = await fetch('/agent/get_all_chats_for_session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customer_id: customerId, session_id: sessionId })
+        });
+
+        if (!response.ok) throw new Error('Failed to fetch chat history');
+        
+        const data = await response.json();
+        if (data.status === 'success' && data.chats.length > 0) {
+          document.getElementById('chat-box').innerHTML = ''; // Clear loading message
+          data.chats.forEach(chat => {
+            const senderClass = chat.sender === 'user' ? 'customer-message' : 
+                                chat.sender === 'agent' ? 'agent-message' : 
+                                'system-message';
+            addMessage(chat.message_text, senderClass, new Date(chat.timestamp));
+          });
+          // Update lastFetchedTime to the timestamp of the very last message in history
+          if (data.chats.length > 0) {
+            lastFetchedTime = data.chats[data.chats.length - 1].timestamp; // Use ISO string directly
+          }
+        } else {
+          addMessage("No previous chat history found for this session.", 'system-message');
+        }
+      } catch (error) {
+        console.error('Error loading chat history:', error);
+        addMessage("Error loading chat history.", 'system-message');
+      }
+    }
+
+    async function fetchNewCustomerMessages() {
+      try {
+        const response = await fetch('/agent/check_customer_messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            customer_id: customerId,
+            session_id: sessionId, // Send session_id for filtering
+            last_check_time: lastFetchedTime
+          })
+        });
+
+        if (!response.ok) throw new Error('Failed to fetch new messages');
+        
+        const data = await response.json();
+        if (data.status === 'success' && data.messages.length > 0) {
+          data.messages.forEach(msg => {
+            // Add only customer messages, as agent messages are added locally upon sending
+            if (msg.sender === 'user') { // Ensure it's a customer message
+                addMessage(msg.message_text, 'customer-message', new Date(msg.timestamp));
+            }
+          });
+          // Update lastFetchedTime to the latest timestamp received
+          lastFetchedTime = data.messages[data.messages.length - 1].timestamp; // Use ISO string
+        }
+      } catch (error) {
+        console.error('Error polling for new messages:', error);
+        // Do not display an error message in chat for polling failures to avoid spam
+      }
+    }
+
+    /**
+     * Adds a message to the chat display.
+     * Uses textContent for XSS prevention.
+     * @param {string} msg The message text.
+     * @param {string} senderClass The CSS class for the sender (e.g., 'customer-message').
+     * @param {Date} [timestamp=new Date()] The timestamp of the message.
+     */
+    function addMessage(msg, senderClass, timestamp = new Date()) {
+      const chatBox = document.getElementById("chat-box");
+      const messageElement = document.createElement("p");
+      messageElement.className = senderClass;
+      messageElement.textContent = msg; // Use textContent for security
+      
+      const timeElement = document.createElement("div");
+      timeElement.className = "message-time";
+      timeElement.textContent = formatTime(timestamp);
+      messageElement.appendChild(timeElement);
+
+      chatBox.appendChild(messageElement);
+      chatBox.scrollTop = chatBox.scrollHeight;
+    }
+    
+    function formatTime(timestamp) {
+      const date = new Date(timestamp);
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    async function sendAgentMessage() {
+      const inputField = document.getElementById("agent-input");
+      const message = inputField.value.trim();
+      
+      if (!message) return;
+      
+      // Clear input field
+      inputField.value = "";
+      inputField.style.height = "auto";
+      
+      // Add message to UI
+      addMessage(message, 'agent-message');
+      
+      // Send message to backend
+      try {
+        const response = await fetch("/agent/send_message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer_id: customerId,
+            session_id: sessionId, 
+            message: message
+          })
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to send message');
+        }
+        
+        const data = await response.json();
+        if (data.status === 'error') {
+          addMessage(`Error: ${data.message}`, 'system-message');
+        }
+        
+      } catch (error) {
+        console.error('Error sending agent message:', error);
+        addMessage("Error: Your message wasn't sent. Please try again.", 'system-message');
+      }
+    }
+
+    async function endChatSession() {
+      // Confirm with agent before ending chat
+      if (!confirm("Are you sure you want to end this chat session and mark it as resolved?")) {
+        return;
+      }
+
+      try {
+        // Find the corresponding RAGDocument ID to update its status
+        // This requires an extra step if RAGDocument doesn't directly map to customer_id+session_id
+        // A robust way would be to pass the RAGDocument ID from the dashboard to this interface.
+        // For now, let's try to update based on the customer_id and session_id (assuming one active escalation per customer+session)
+        // This is a simplification; ideally, the agent dashboard would pass the specific RAGDocument ID or Task SID
+        
+        // As per new_app.py's get_unresolved_sessions, document_id is sent from dashboard.
+        // However, this `agent_chat_interface` only gets `customer_id` and `session_id`.
+        // A better flow would be to fetch the relevant `document_id` here.
+        // For a quick fix, let's assume we can query backend to find the current escalated doc ID.
+        
+        const dashboardResponse = await fetch('/agent/unresolved_sessions'); // Re-fetch to find current escalated document
+        const dashboardData = await dashboardResponse.json();
+        let documentIdToResolve = null;
+
+        if (dashboardData.status === 'success' && dashboardData.sessions) {
+            const relevantSession = dashboardData.sessions.find(s => 
+                s.customer_id === customerId && s.session_id === sessionId
+            );
+            if (relevantSession) {
+                documentIdToResolve = relevantSession.document_id;
+            }
+        }
+
+        if (!documentIdToResolve) {
+            alert('Could not find the associated escalation record to mark as resolved.');
+            console.error('No RAGDocument ID found for customer:', customerId, 'session:', sessionId);
+            return;
+        }
+
+        const response = await fetch('/agent/update_session_status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ document_id: documentIdToResolve, status: 'resolved' })
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to resolve chat session');
+        }
+        const data = await response.json();
+        if (data.status === 'success') {
+          alert('Chat session marked as resolved. You will now be redirected to the dashboard.');
+          window.close(); // Close the current chat window
+          if (window.opener) {
+              window.opener.location.reload(); // Refresh the dashboard if it's the opener
+          } else {
+              window.location.href = '/agent_dashboard'; // Fallback redirect
+          }
+        } else {
+          alert(`Failed to resolve chat session: ${data.message}`);
+        }
+      } catch (error) {
+        console.error('Error ending chat session:', error);
+        alert('An error occurred while trying to end the chat session.');
+      }
+    }
+
+  </script>
+</body>
+</html>

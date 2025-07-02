@@ -277,17 +277,23 @@ Respond with only one word: 'emi', 'balance', 'loan', or 'unclear'."""
     except Exception as e:
         print(f"Error classifying intent: {e}")
         return "unclear"
-
 def get_embedding(text):
     try:
-        response = bedrock_runtime.invoke_model( # Change 'bedrock' to 'bedrock_runtime'
+        response = bedrock_runtime.invoke_model(
             modelId="amazon.titan-embed-text-v2:0",
             contentType="application/json",
             accept="application/json",
             body=json.dumps({"inputText": text})
         )
         result = json.loads(response['body'].read())
-        return result["embedding"]
+
+        # ✅ Titan v2 returns flat list as "embedding"
+        embedding_vector = result.get("embedding")
+        if isinstance(embedding_vector, list) and len(embedding_vector) == 1024:
+            return embedding_vector
+        else:
+            raise ValueError(f"Unexpected embedding shape or format: {type(embedding_vector)}, len={len(embedding_vector)}")
+
     except Exception as e:
         print(f"❌ Error generating embedding: {e}")
         return None

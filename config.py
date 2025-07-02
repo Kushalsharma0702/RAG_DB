@@ -11,18 +11,19 @@ FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'True') # Keep as string, Flask converts 
 # --- Twilio Configuration ---
 # Applying .strip() to all fetched environment variables for robustness
 # This removes any leading/trailing whitespace, which often causes "404 not found" errors
-TWILIO_SID = os.getenv("TWILIO_SID", "").strip()
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
-TWILIO_PHONE = os.getenv("TWILIO_PHONE", "").strip()
-TWILIO_CONVERSATIONS_SERVICE_SID = os.getenv("TWILIO_CONVERSATIONS_SERVICE_SID", "").strip()
-TWILIO_TASK_ROUTER_WORKFLOW_SID = os.getenv("TWILIO_TASK_ROUTER_WORKFLOW_SID", "").strip()
-TWILIO_TASK_ROUTER_WORKSPACE_SID = os.getenv("TWILIO_TASK_ROUTER_WORKSPACE_SID", "").strip() # This is the critical one!
+
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_CONVERSATIONS_SERVICE_SID = os.getenv("TWILIO_CONVERSATIONS_SERVICE_SID")
+TWILIO_PHONE = os.getenv("TWILIO_PHONE")
+TWILIO_TASK_ROUTER_WORKSPACE_SID = os.getenv("TWILIO_TASK_ROUTER_WORKSPACE_SID")
+TWILIO_TASK_ROUTER_WORKFLOW_SID = os.getenv("TWILIO_TASK_ROUTER_WORKFLOW_SID")
 
 # --- Database Configuration ---
 DB_HOST = os.getenv("DB_HOST", "localhost").strip()
 DB_PORT = os.getenv("DB_PORT", "5432").strip()
 DB_USER = os.getenv("DB_USER", "postgres").strip()
-DB_PASSWORD = os.getenv("DB_PASSWORD", "Kushal07#").strip()
+DB_PASSWORD = os.getenv("DB_PASSWORD", "Kushal07").strip()
 DB_NAME = os.getenv("DB_NAME", "financial_chatbot_db").strip()
 
 # Construct database URL

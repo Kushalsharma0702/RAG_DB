@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Agent Dashboard - Escalated Chats (WebSocket)</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      display: flex;
+      height: 100vh;
+    }
+    .sidebar {
+      width: 300px;
+      background-color: #1e1e2f;
+      color: white;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .chat-header {
+      background: #333;
+      color: white;
+      padding: 10px;
+    }
+    .chat-box {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      background: #f4f4f4;
+    }
+    .chat-input {
+      display: flex;
+      padding: 10px;
+      background: #ddd;
+    }
+    .chat-input input {
+      flex: 1;
+      padding: 10px;
+    }
+    .chat-input button {
+      padding: 10px;
+    }
+    .message {
+      margin: 10px 0;
+      max-width: 70%;
+      padding: 10px;
+      border-radius: 10px;
+    }
+    .user-message { background-color: #f0f0f0; align-self: flex-start; }
+    .bot-message { background-color: #d0eaff; align-self: flex-start; }
+    .agent-message { background-color: #fff4c2; align-self: flex-end; }
+    .chat-history { display: flex; flex-direction: column; }
+    .chat-entry {
+      margin-bottom: 10px;
+      cursor: pointer;
+      padding: 10px;
+      background: #2a2a3b;
+      border-radius: 5px;
+    }
+    .chat-entry:hover {
+      background-color: #3a3a5b;
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <h2>Escalated Chats</h2>
+    <div id="chat-list"></div>
+  </div>
+
+  <div class="main">
+    <div class="chat-header">
+      <span id="chat-header-title">Select a chat</span>
+      <select id="chat-status" style="float: right">
+        <option value="pending">Pending</option>
+        <option value="resolved">Resolved</option>
+      </select>
+    </div>
+
+    <div id="chat-box" class="chat-box chat-history"></div>
+
+    <div class="chat-input">
+      <input type="text" id="agent-message" placeholder="Type your message...">
+      <button onclick="sendAgentMessage()">Send</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    let currentCustomerId = null;
+    let currentDocumentId = null;
+    const socket = io();
+
+    socket.on('connect', () => {
+      console.log('Connected to WebSocket');
+    });
+
+    socket.on('new_escalated_chat', () => {
+      fetchEscalatedChats();
+    });
+
+    socket.on('chat_update', ({ customer_id, document_id }) => {
+      if (customer_id === currentCustomerId) loadChat(customer_id, document_id);
+    });
+
+    function fetchEscalatedChats() {
+      fetch('/escalated_chats')
+        .then(res => res.json())
+        .then(data => {
+          const list = document.getElementById('chat-list');
+          list.innerHTML = '';
+          data.forEach(chat => {
+            const div = document.createElement('div');
+            div.className = 'chat-entry';
+            div.innerText = `${chat.customer_id} | ${new Date(chat.created_at).toLocaleString()}`;
+            div.onclick = () => loadChat(chat.customer_id, chat.document_id);
+            list.appendChild(div);
+          });
+        });
+    }
+
+    function loadChat(customerId, documentId) {
+      currentCustomerId = customerId;
+      currentDocumentId = documentId;
+      document.getElementById('chat-header-title').innerText = `Chat with ${customerId}`;
+
+      fetch(`/chat_history/${customerId}`)
+        .then(res => res.json())
+        .then(data => {
+          const box = document.getElementById('chat-box');
+          box.innerHTML = '';
+          data.forEach(msg => {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = 'message';
+            if (msg.sender === 'user') msgDiv.classList.add('user-message');
+            else if (msg.sender === 'agent') msgDiv.classList.add('agent-message');
+            else msgDiv.classList.add('bot-message');
+            msgDiv.innerText = msg.message;
+            box.appendChild(msgDiv);
+          });
+          box.scrollTop = box.scrollHeight;
+        });
+    }
+
+    function sendAgentMessage() {
+      const msg = document.getElementById('agent-message').value.trim();
+      if (!msg || !currentCustomerId) return;
+  
+      fetch('/send_agent_message', { 
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ customer_id: currentCustomerId, message: msg })
+      }).then(() => {
+        document.getElementById('agent-message').value = '';
+        loadChat(currentCustomerId, currentDocumentId);
+        socket.emit('agent_message_sent', { customer_id: currentCustomerId });
+      });
+    }
+
+    document.getElementById('chat-status').addEventListener('change', () => {
+      if (!currentDocumentId) return;
+      const newStatus = document.getElementById('chat-status').value;
+      fetch('/update_status', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ document_id: currentDocumentId, status: newStatus })
+      }).then(() => alert(`Status set to ${newStatus}`));
+
+    });
+
+    fetchEscalatedChats();
+  </script>
+</body>
+</html>

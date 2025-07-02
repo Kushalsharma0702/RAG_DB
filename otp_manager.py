@@ -1,10 +1,10 @@
 import random, time
 from twilio.rest import Client
-from config import TWILIO_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE
+from config import TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE
 import logging
 
 # Initialize Twilio client
-client = Client(TWILIO_SID, TWILIO_AUTH_TOKEN)
+client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 # In-memory OTP storage: {phone_number: {"otp": "123456", "attempts": 0, "timestamp": 1234567890}}
 otp_store = {}
 
