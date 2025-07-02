@@ -33,6 +33,7 @@ from config import (
     TWILIO_TASK_ROUTER_WORKSPACE_SID, TWILIO_TASK_ROUTER_WORKFLOW_SID # Import Task Router SIDs
 )
 from twilio_chat import create_conversation, send_message_to_conversation, create_task_for_handoff # Import twilio_chat functions
+from twilio.twiml.messaging_response import MessagingResponse
 
 load_dotenv()
 
@@ -226,6 +227,7 @@ def summarize_chat_route():
     current_session_id = str(session.get('session_id', uuid.uuid4()))
 
     if not customer_id:
+        print("Warning: Customer ID not found in session for summarization.")
         return jsonify({"status": "error", "message": "Customer ID not found in session. Summary not saved."}), 400
 
     try:
@@ -233,7 +235,7 @@ def summarize_chat_route():
         summary_embedding = get_embedding(summary_text)
 
         if summary_embedding is not None:
-            document_id = save_unresolved_chat(
+            save_unresolved_chat(
                 customer_id=customer_id,
                 summary=summary_text,
                 embedding=summary_embedding
@@ -243,13 +245,15 @@ def summarize_chat_route():
             conversation_sid = create_conversation(
                 user_id=str(customer_id)
             )
+
             if conversation_sid:
+                # Send the conversation summary to Twilio using send_message_to_conversation
                 send_message_to_conversation(
-                    conversation_sid,
-                    author="System",
+                    conversation_sid, 
+                    author="System", 
                     message_body=f"A user ({customer_id}) has reported an unresolved issue and requires agent assistance.\n\nSummary:\n{summary_text}"
                 )
-                # Optionally send last 3-5 messages for context
+
                 last_three_chats = get_last_three_chats(customer_id)
                 if last_three_chats:
                     send_message_to_conversation(conversation_sid, author="System", message_body="--- Last 3 Chat Interactions ---")
@@ -550,18 +554,43 @@ def connect_agent():
                 )
 
                 if task_sid:
-                    # Optionally update RAGDocument with task_sid, status, etc.
-                    # Notify agents via Socket.IO
+                    # Update the RAG document with the task_sid
+                    session_db = Session()
+                    rag_doc = session_db.query(RAGDocument).filter(
+                        RAGDocument.document_id == document_id
+                    ).first()
+                    if rag_doc:
+                        rag_doc.task_id = task_sid
+                        rag_doc.status = 'pending'
+                        session_db.commit()
+                    session_db.close()
+                    
+                    logging.info(f"🏆 Task Router Task {task_sid} created for customer {customer_id}.")
+                    logging.info(f"✅ Messages sent to conversation {conversation_sid}")
+                    logging.info(f"🔁 Chat routed to agent via Task Router. Conversation SID: {conversation_sid}")
+                    
+                    # Save the interaction in the database
+                    save_chat_interaction(
+                        session_id=current_session_id, 
+                        sender='system', 
+                        message_text="Conversation routed to human agent via Task Router.", 
+                        customer_id=customer_id, 
+                        stage='agent_handoff'
+                    )
+                    
+                    # Notify all agents via Socket.IO
                     socketio.emit('new_escalated_chat', {
                         'customer_id': customer_id,
                         'timestamp': datetime.now().isoformat(),
-                        'summary': summary_text[:100] + '...',
-                        'document_id': document_id,
+                        'summary': summary_text[:100] + '...',  # Send a preview
+                        'document_id': document_id if 'document_id' in locals() else None,
                         'task_id': task_sid
                     }, room='agent_room')
+                    
                     return jsonify({"status": "success", "message": "Chat routed to agent successfully."})
                 else:
-                    return jsonify({"status": "error", "message": "Failed to create agent task."}), 500
+                    logging.error(f"❌ Failed to create Task Router Task for customer {customer_id}.")
+                    return jsonify({"status": "error", "message": "Failed to create agent task. Please try again later."}), 500
             else:
                 logging.error("❌ Failed to create/get conversation for agent handoff.")
                 return jsonify({"status": "error", "message": "Failed to connect with agent. Please try again later."}), 500
@@ -842,9 +871,154 @@ def mark_as_resolved():
     finally:
         session_db.close()
 
+@app.route('/whatsapp/webhook', methods=['POST'])
+def whatsapp_webhook():
+    incoming_msg = request.values.get('Body', '').strip()
+    whatsapp_phone_number = request.values.get('From', '').replace('whatsapp:', '')
+    resp = MessagingResponse()
+    msg = resp.message()
+
+    # Simple in-memory session store (replace with Redis/db for production)
+    if 'whatsapp_sessions' not in app.config:
+        app.config['whatsapp_sessions'] = {}
+    session_data = app.config['whatsapp_sessions'].get(whatsapp_phone_number, {
+        'stage': 'greeting',
+        'intent': None,
+        'account_id': None,
+        'phone_number': whatsapp_phone_number,
+        'customer_id': None
+    })
+
+    def send_menu():
+        msg.body("Welcome! How can I help you today?\n1. Know your EMI\n2. Account Balance\n3. Know your Loan Amount\n(Reply with the number of your choice)")
+
+    # 1. Greeting/menu
+    if session_data['stage'] == 'greeting':
+        if incoming_msg.lower() in ['hi', 'hello', 'hey']:
+            send_menu()
+            session_data['stage'] = 'menu'
+        else:
+            send_menu()
+            session_data['stage'] = 'menu'
+
+    # 2. Menu selection
+    elif session_data['stage'] == 'menu':
+        if incoming_msg == '1':
+            session_data['intent'] = 'emi'
+            msg.body("Please enter your Account ID.")
+            session_data['stage'] = 'account_id'
+        elif incoming_msg == '2':
+            session_data['intent'] = 'balance'
+            msg.body("Please enter your Account ID.")
+            session_data['stage'] = 'account_id'
+        elif incoming_msg == '3':
+            session_data['intent'] = 'loan'
+            msg.body("Please enter your Account ID.")
+            session_data['stage'] = 'account_id'
+        else:
+            send_menu()
+
+    # 3. Account ID entry
+    elif session_data['stage'] == 'account_id':
+        account_info = fetch_customer_by_account(incoming_msg)
+        if account_info:
+            session_data['account_id'] = incoming_msg
+            session_data['customer_id'] = account_info['customer_id']
+            session_data['phone_number'] = account_info['phone_number']
+            otp = send_otp(account_info['phone_number'])
+            if otp:
+                msg.body("OTP sent to your registered mobile number! Please enter the 6-digit OTP.")
+                session_data['stage'] = 'otp'
+            else:
+                msg.body("Failed to send OTP. Please try again later.")
+        else:
+            msg.body("Invalid Account ID. Please try again.")
+
+    # 4. OTP entry
+    elif session_data['stage'] == 'otp':
+        is_valid, otp_msg = validate_otp(session_data['phone_number'], incoming_msg)
+        if is_valid:
+            # Use account_id here!
+            data = fetch_data(session_data['intent'], session_data['account_id'])
+            if data is not None:
+                answer = generate_response(session_data['intent'], data, [])
+                msg.body(f"{answer}\n\nPlease share your feedback: 👍 or 👎")
+                session_data['stage'] = 'feedback'
+            else:
+                msg.body("Sorry, we couldn't find your requested information. Please check your account or try again later.")
+                session_data['stage'] = 'greeting'
+        else:
+            msg.body(f"Invalid OTP: {otp_msg}. Please try again.")
+
+    # 5. Feedback
+    elif session_data['stage'] == 'feedback':
+        if incoming_msg in ['👍', 'thumbs up']:
+            msg.body("Thank you for using our service! If you have more queries, just say hi.")
+            session_data = {
+                'stage': 'greeting',
+                'intent': None,
+                'account_id': None,
+                'phone_number': whatsapp_phone_number,
+                'customer_id': None
+            }
+        elif incoming_msg in ['👎', 'thumbs down']:
+            try:
+                chat_history = get_last_three_chats(session_data['customer_id'])
+                if not chat_history or not isinstance(chat_history, list) or not all('message_text' in m for m in chat_history):
+                    logging.error(f"Cannot escalate: No valid chat history for customer {session_data['customer_id']}")
+                    msg.body("Sorry, we couldn't escalate your chat because there is no recent conversation history.")
+                    session_data['stage'] = 'greeting'
+                else:
+                    claude_history = [
+                        {"sender": m["sender"], "content": m["message_text"]}
+                        for m in chat_history if "message_text" in m and "sender" in m
+                    ]
+                    if not claude_history:
+                        logging.error("No valid chat history for summarization.")
+                        msg.body("Sorry, we couldn't escalate your chat because there is no recent conversation history.")
+                        session_data['stage'] = 'greeting'
+                    else:
+                        summary_text = get_chat_summary(claude_history)
+                        summary_embedding = get_embedding(summary_text)
+                        conversation_sid = create_conversation(session_data['customer_id'])
+                        task_sid = create_task_for_handoff(
+                            customer_id=session_data['customer_id'],
+                            phone_number=session_data['phone_number'],
+                            summary=summary_text,
+                            recent_messages=chat_history,
+                            conversation_sid=conversation_sid
+                        )
+                        save_unresolved_chat(session_data['customer_id'], summary_text, summary_embedding)
+                        logging.info(f"Escalation: conversation_sid={conversation_sid}, task_sid={task_sid}")
+                        socketio.emit('new_escalated_chat', {
+                            'customer_id': session_data['customer_id'],
+                            'timestamp': datetime.now().isoformat(),
+                            'summary': summary_text[:100] + '...',
+                            'document_id': str(task_sid),
+                            'task_id': task_sid
+                        }, room='agent_room')
+                        msg.body("Your query is being escalated to a human agent. Please wait...")
+                        session_data['stage'] = 'escalated'
+            except Exception as e:
+                logging.error(f"Error during WhatsApp escalation: {e}")
+                msg.body("Sorry, something went wrong while escalating your chat. Please try again later.")
+        elif incoming_msg == 'escalate':
+            msg.body("Your request has been escalated to a human agent. Please wait...")
+            session_data['stage'] = 'escalated'
+        else:
+            msg.body("Please reply with 👍 or 👎.")
+
+    # 6. Escalated state
+    elif session_data['stage'] == 'escalated':
+        msg.body("Please wait while an agent joins the chat.")
+
+    # Save session state
+    app.config['whatsapp_sessions'][whatsapp_phone_number] = session_data
+    return str(resp)
+
 if __name__ == "__main__":
     # Start the Flask app with Socket.IO
-    socketio.run(app, debug=False,  host='localhost', port=5504)
+    socketio.run(app, debug=True,  host='localhost', port=5504)
 socket = io('http://localhost:5504', {
     reconnection: true,
     reconnectionAttempts: Infinity,
