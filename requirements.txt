@@ -1,14 +1,19 @@
-flask==2.2.3
-werkzeug==2.2.3
-flask-cors==3.0.10
-gunicorn==20.1.0
-sqlalchemy==1.4.46
-psycopg2-binary==2.9.5
-boto3==1.28.15
-twilio==8.1.0
-pgvector==0.2.0
-pandas==2.0.1
-python-dotenv==1.0.0
-uuid==1.30
-aiohttp==3.12.13
-aiohttp-retry==2.9.1
+flask==2.2.3                # Main web framework (app.py, app_socketio.py)
+flask-cors==3.0.10          # CORS support for Flask APIs
+flask-socketio==5.3.6       # Real-time communication (web/agent dashboard)
+gunicorn==20.1.0            # Production WSGI server
+sqlalchemy==1.4.46          # ORM for PostgreSQL (database.py, rag_utils.py)
+psycopg2-binary==2.9.5      # PostgreSQL driver
+pgvector==0.2.0             # Vector embedding support in PostgreSQL
+twilio==8.1.0               # Twilio REST API (WhatsApp, Conversations, TaskRouter)
+boto3==1.28.15              # AWS SDK for Bedrock Claude/Gemini (bedrock_client.py)
+pandas==2.0.1               # Data manipulation (rag_utils.py)
+numpy                       # Used by pandas and for numerical ops
+scikit-learn                # For any ML/embedding utilities
+torch                       # For deep learning/NLP models (if used)
+transformers                # For NLP models (if used)
+matplotlib                  # For data visualization (if used)
+python-dotenv==1.0.0        # Load .env config (config.py)
+uuid==1.30                  # UUID generation (database.py, etc.)
+aiohttp==3.12.13            # Async HTTP requests (if used)
+aiohttp-retry==2.9.1        # Retry logic for aiohttp (if used)
