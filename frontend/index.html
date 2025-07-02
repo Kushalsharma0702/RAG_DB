@@ -239,9 +239,9 @@
     let chatHistory = [];
     let pendingMessage = ""; // To store the user's first query during auth
 
-    // Add these variables for agent chat integration
-    let checkingForAgentMessages = false;
-    let lastMessageCheckTime = new Date().toISOString();
+    // The polling variables and functions below will be removed.
+    // let checkingForAgentMessages = false;
+    // let lastMessageCheckTime = new Date().toISOString();
     
     window.onload = function () {
       const userInput = document.getElementById("user-input");
@@ -262,52 +262,12 @@
         }
       });
       
-      // Start checking for agent messages if authenticated
-      if (localStorage.getItem('authenticated') === 'true') {
-        startCheckingForAgentMessages();
-      }
+      // The call to start polling is removed from here.
     };
 
-    // Add this function to check for new agent messages
-    function startCheckingForAgentMessages() {
-      if (checkingForAgentMessages) return;
-      checkingForAgentMessages = true;
-      
-      // Check for new messages every 3 seconds
-      setInterval(checkForAgentMessages, 3000);
-    }
-    
-    async function checkForAgentMessages() {
-      if (!localStorage.getItem('authenticated') || !localStorage.getItem('customer_id')) {
-        return;
-      }
-      
-      try {
-        const response = await fetch('/check_agent_messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            customer_id: localStorage.getItem('customer_id'),
-            last_check_time: lastMessageCheckTime
-          })
-        });
-        
-        if (!response.ok) return;
-        
-        const data = await response.json();
-        if (data.messages && data.messages.length > 0) {
-          // Update last check time
-          lastMessageCheckTime = new Date().toISOString();
-          
-          // Display each new agent message
-          data.messages.forEach(message => {
-            addAgentMessage(message.message_text, message.timestamp);
-          });
-        }
-      } catch (error) {
-        console.error('Error checking for agent messages:', error);
-      }
-    }
+    // The startCheckingForAgentMessages function is removed.
+
+    // The checkForAgentMessages function is removed.
     
     // Function to add agent message to the chat
     function addAgentMessage(message, timestamp) {
@@ -657,44 +617,13 @@ async function handleOtpVerificationSuccess(data) {
   socket.emit('join_customer_room', { customer_id: data.customer_id });
   console.log(`Joined room for customer ${data.customer_id}`);
   
-  startCheckingForAgentMessages();
+  // The call to start polling is removed from here.
 }
 
 // --- END OF CORRECTED SCRIPT ---
 
   // --- AGENT MESSAGE POLLING LOGIC START ---
-  let lastCheckTime = new Date().toISOString();
-
-  function pollAgentMessages() {
-    const customer_id = localStorage.getItem('customer_id');
-    if (!customer_id) return;
-
-    fetch('/check_agent_messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customer_id, last_check_time: lastCheckTime })
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (data.status === 'success' && data.messages) {
-        data.messages.forEach(msg => {
-          // Display message in UI using your existing addAgentMessage function
-          addAgentMessage(msg.message_text, msg.timestamp);
-          lastCheckTime = msg.timestamp;
-        });
-      } else if (data.status !== 'success') {
-        console.error('Agent message error:', data.message);
-      }
-    })
-    .catch(err => console.error('Fetch error:', err));
-  }
-
-  // Start polling after authentication
-  window.addEventListener('load', () => {
-    if (localStorage.getItem('authenticated') === 'true') {
-      setInterval(pollAgentMessages, 3000);
-    }
-  });
+  // This entire commented out block is removed.
   // --- AGENT MESSAGE POLLING LOGIC END ---
   </script>
   </body>
