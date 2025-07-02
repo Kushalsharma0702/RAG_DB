@@ -997,7 +997,8 @@ def whatsapp_webhook():
                             'document_id': str(task_sid),
                             'task_id': task_sid
                         }, room='agent_room')
-                        msg.body("Your query is being escalated to a human agent. Please wait...")
+                        # Updated escalation message to user
+                        msg.body("Your chat has been escalated for further assistance from a live agent. They will contact you soon.")
                         session_data['stage'] = 'escalated'
             except Exception as e:
                 logging.error(f"Error during WhatsApp escalation: {e}")
