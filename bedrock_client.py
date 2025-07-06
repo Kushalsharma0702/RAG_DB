@@ -20,8 +20,13 @@ def parse_chat_history(chat_history_list):
     # Ensure messages alternate between 'user' and 'assistant'
     for entry in chat_history_list:
         role = "user" if entry.get("sender") == "user" else "assistant"
-        # Claude 3 expects content to be a list of content blocks
-        messages.append({"role": role, "content": [{"type": "text", "text": entry.get("content")}]})
+        # FIX: Check for 'content' from the web UI, fallback to 'message' for other sources (like WhatsApp session history)
+        message_text = entry.get("content") or entry.get("message", "")
+        
+        # FIX: Ensure the message text is not empty before appending to avoid Bedrock API errors.
+        if message_text and message_text.strip():
+            # Claude 3 expects content to be a list of content blocks
+            messages.append({"role": role, "content": [{"type": "text", "text": message_text}]})
 
     # If the last message is from the assistant and the next prompt is from the user,
     # it naturally follows. If the last message is user and we're adding another user prompt,
@@ -212,7 +217,8 @@ def get_intent_from_text(chat_history_list):
     last_user_message = ""
     for message in reversed(chat_history_list):
         if message.get("sender") == "user":
-            last_user_message = message.get("content", "")
+            # Correctly get the message text from the 'message' key
+            last_user_message = message.get("message", "")
             break
     
     # If no user message found, return unclear

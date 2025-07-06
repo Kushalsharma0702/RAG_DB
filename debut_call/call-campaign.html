@@ -1,0 +1,86 @@
+<!-- https://mybankassist.intalksai.com/collection-campaign  -->
+<!DOCTYPE html> 
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Loan Recovery Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
+  <style>
+    body {
+      background-color: #121212;
+      color: #fff;
+    }
+    .table {
+      background-color: #1e1e1e;
+    }
+    .btn-call {
+      background-color: #28a745;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container my-5">
+    <h2 class="mb-4">📞 Loan Recovery Call Dashboard</h2>
+    <div class="d-flex justify-content-between mb-3">
+      <button class="btn btn-success" onclick="startCampaign()">Start Call Campaign</button>
+    </div>
+    <div id="message" class="mb-3"></div>
+    <table class="table table-bordered table-dark table-hover">
+      <thead>
+        <tr>
+          <th>Customer Name</th>
+          <th>Loan ID</th>
+          <th>Phone Number</th>
+          <th>EMI</th>
+          <th>Due Date</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="customerTableBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    async function loadCustomers() {
+      try {
+        const res = await fetch('http://127.0.0.1:5500/api/customers');
+        const customers = await res.json();
+        const table = document.getElementById('customerTableBody');
+        table.innerHTML = '';
+
+        customers.forEach(c => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${c.customer_name}</td>
+            <td>${c.loan_id_full}</td>
+            <td>${c.customer_phone_number}</td>
+            <td>${c.emi_amount}</td>
+            <td>${c.due_date}</td>
+            <td>${c.status}</td>
+          `;
+          table.appendChild(row);
+        });
+      } catch (err) {
+        console.error('Error loading customers:', err);
+        document.getElementById('message').innerHTML = `<div class="alert alert-danger">Failed to load customers.</div>`;
+      }
+    }
+
+    async function startCampaign() {
+      try {
+        const res = await fetch('http://127.0.0.1:5500/start-campaign');
+        const data = await res.json();
+        document.getElementById('message').innerHTML = `<div class="alert alert-success">${data.message}</div>`;
+        loadCustomers(); // Refresh the table
+      } catch (err) {
+        console.error('Error starting campaign:', err);
+        document.getElementById('message').innerHTML = `<div class="alert alert-danger">Error starting campaign.</div>`;
+      }
+    }
+
+    loadCustomers(); // Load data on page load
+  </script>
+</body>
+</html>

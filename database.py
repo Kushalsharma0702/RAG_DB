@@ -1,16 +1,13 @@
 # database.py
-from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy import create_engine, Column, String, DateTime, Text, Boolean, DECIMAL, ForeignKey, Integer, text
-
-# from sqlalchemy import create_engine, Column, String, DateTime, Text, Boolean, UUID, DECIMAL, ForeignKey, Integer, text
+from sqlalchemy import create_engine, Column, String, DateTime, Text, Boolean, DECIMAL, ForeignKey, Integer, text, UUID
 from sqlalchemy.dialects.postgresql import JSONB
 from pgvector.sqlalchemy import Vector
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
+import logging
 import os
 import uuid
-import logging
 
 # Setup logging
 logging.basicConfig(
@@ -114,13 +111,17 @@ class ClientInteraction(Base):
 
 class RAGDocument(Base):
     __tablename__ = 'rag_document'
-    document_id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    # FIX: Change the data type from String(36) to UUID(as_uuid=True)
+    # This ensures type consistency with other primary keys like interaction_id.
+    document_id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     customer_id = Column(String(50), ForeignKey('customer.customer_id'), nullable=False)
     document_text = Column(Text, nullable=False)
     embedding = Column(Vector(1024))  # For storing OpenAI embeddings
     created_at = Column(DateTime, default=datetime.utcnow)
     task_id = Column(String(50), nullable=True)  # To store Twilio Task ID
     status = Column(String(20), default='pending')  # pending, in_process, resolved
+    source = Column(String(20), default='web', nullable=False) # Add source column
+
 
 def create_tables():
     try:
@@ -151,7 +152,10 @@ def fetch_customer_by_account(account_id):
         session.close()
 
 def save_chat_interaction(session_id: uuid.UUID, sender: str, message_text: str, customer_id: str = None, intent: str = None, stage: str = None, feedback_provided: bool = False, feedback_positive: bool = None, raw_response_data: dict = None, embedding: list = None):
-    session = Session()
+    """
+    Save a chat interaction to the database
+    """
+    db = Session()
     try:
         interaction = ClientInteraction(
             session_id=session_id,
@@ -163,42 +167,50 @@ def save_chat_interaction(session_id: uuid.UUID, sender: str, message_text: str,
             feedback_provided=feedback_provided,
             feedback_positive=feedback_positive,
             raw_response_data=raw_response_data,
-            embedding=embedding
-        )
-        session.add(interaction)
-        session.commit()
-        return True
-    except Exception as e:
-        session.rollback()
-        logging.error(f"❌ Error saving chat interaction: {e}")
-        return False
-    finally:
-        session.close()
-
-def save_unresolved_chat(customer_id: str, summary: str, embedding: list):
-    """Save an unresolved chat to the RAG document table and return the document_id"""
-    db = Session()
-    try:
-        # Create a new RAGDocument - remove document_type parameter
-        document = RAGDocument(
-            customer_id=customer_id,
-            document_text=summary,
             embedding=embedding,
-            status='pending'  # Only use valid parameters defined in the model
+            created_at=datetime.now()
         )
-        db.add(document)
+        db.add(interaction)
         db.commit()
-        
-        # Return the document ID for reference
-        return str(document.document_id)
+        logging.info(f"Chat interaction saved for customer {customer_id}")
+        return interaction.interaction_id
     except Exception as e:
         db.rollback()
-        logging.error(f"❌ Error saving unresolved chat summary: {e}")
+        logging.error(f"Error saving chat interaction: {e}")
         return None
     finally:
         db.close()
 
-def get_last_three_chats(customer_id):
+def save_unresolved_chat(customer_id: str, summary: str, embedding: list, task_id: str, source: str = 'web'):
+    """
+    Saves a summarized, unresolved chat session to the RAG documents table.
+    """
+    db = Session()
+    try:
+        # Check if a document with this task_id already exists
+        existing_doc = db.query(RAGDocument).filter(RAGDocument.task_id == task_id).first()
+        if existing_doc:
+            logging.warning(f"Document with task_id {task_id} already exists. Skipping save.")
+            return
+
+        new_document = RAGDocument(
+            customer_id=customer_id,
+            document_text=summary,
+            embedding=embedding,
+            status='pending',
+            task_id=task_id,  # Save the task_id
+            source=source
+        )
+        db.add(new_document)
+        db.commit()
+        logging.info(f"✅ Saved unresolved chat for customer {customer_id} with task_id {task_id} from source {source}")
+    except Exception as e:
+        db.rollback()
+        logging.error(f"❌ Error saving unresolved chat: {e}")
+    finally:
+        db.close()
+
+def get_last_three_chats(customer_id: str):
     session = Session()
     try:
         query = text("""
