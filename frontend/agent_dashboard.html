@@ -370,7 +370,7 @@
                     
                     chatItem.innerHTML = `
                         <div class="d-flex w-100 justify-content-between">
-                            <h6 class="mb-1">Customer ${session.customer_id}</h6>
+                            <h6 class="mb-1">${session.full_name || 'Customer ' + session.customer_id}</h6>
                             <small>${statusBadge}</small>
                         </div>
                         <p class="mb-1 small">${textPreview}</p>
@@ -403,7 +403,9 @@
                 });
                 
                 // Update customer info
-                document.getElementById('selected-customer').textContent = `Customer ${currentCustomerId}`;
+                document.getElementById('selected-customer').textContent = session.full_name 
+                    ? `${session.full_name}` 
+                    : `Customer ${currentCustomerId}`;
                 document.getElementById('selected-task-id').textContent = currentTaskId 
                     ? `Task ID: ${currentTaskId}` 
                     : '';
