@@ -22,7 +22,7 @@ TWILIO_TASK_ROUTER_WORKSPACE_SID = os.getenv("TWILIO_TASK_ROUTER_WORKSPACE_SID")
 TWILIO_TASK_ROUTER_WORKFLOW_SID = os.getenv("TWILIO_TASK_ROUTER_WORKFLOW_SID")
 
 # --- Database Configuration ---
-DB_HOST = os.getenv("DB_HOST", "localhost").strip()
+DB_HOST = os.getenv("DB_HOST", "finance-db.cv8igmo4w3fe.eu-north-1.rds.amazonaws.com").strip()
 DB_PORT = os.getenv("DB_PORT", "5432").strip()
 DB_USER = os.getenv("DB_USER", "postgres").strip()
 DB_PASSWORD = os.getenv("DB_PASSWORD", "Kushal07").strip()

@@ -15,7 +15,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s"
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:Kushal07@localhost/financial_chatbot_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "DATABASE_URL=postgresql://postgres:Kushal07@finance-db.cv8igmo4w3fe.eu-north-1.rds.amazonaws.com:5432/financial_chatbot_db")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable not set.")
 
