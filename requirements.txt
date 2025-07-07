@@ -1,16 +1,28 @@
+# Core Framework
 Flask==2.2.3
 Flask-Cors==3.0.10
 Flask-SocketIO==5.3.6
-python-dotenv==1.0.1
-twilio==8.1.0
-boto3==1.28.15
-requests==2.32.4
-SQLAlchemy==2.0.30
-psycopg2-binary==2.9.9
 eventlet==0.35.1
 gunicorn==21.2.0
+
+# Database
+SQLAlchemy==2.0.30
+psycopg2-binary==2.9.9
+redis==5.0.1
+pgvector==0.2.4
+
+# Twilio Integration
+twilio==8.1.0
+
+# AWS Integration
+boto3==1.28.15
+
+# Data Processing
+python-dotenv==1.0.1
+requests==2.32.4
 pandas==2.0.1
 scikit-learn==1.7.0
 numpy==2.2.6
-redis==5.0.1
-pgvector==0.2.4
+
+# Environment & Configuration
+python-dotenv==1.0.1
